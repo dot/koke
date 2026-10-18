@@ -4,14 +4,14 @@ What koke is for, who uses it, and what each of them does with it. This is the r
 
 ## Actors
 
-- **Learner**: a family member who studies and wants to watch their own patch of moss grow. Several learners can share one deployment; each one sees only their own records.
-- **Admin**: the family member who runs the server. Invites learners and can read every record directly in the database. There is no admin screen in v1.
+- **Learner**: someone who studies and wants to watch their own patch of moss grow. Several learners can share one deployment; each one sees only their own records.
+- **Admin**: whoever runs the server. Invites learners and can read every record directly in the database. There is no admin screen in v1.
 
 ## Ground rules
 
 - koke exists to motivate the learner, not to manage them. It never nags: no reminders to study, no prompts to fill in missing data.
 - The learner's records are private to the learner within the app. The admin can read them as the operator of the database; the app makes no promise either way.
-- Learners are family only. Accounts are created by invitation from the admin; there is no self-signup.
+- Accounts are created by invitation from the admin; there is no self-signup.
 
 ## Learner use cases
 
@@ -33,7 +33,9 @@ While a session is running, the learner taps "stop". The session ends at that mo
 
 ### L5. Come back after the phone was away
 
-The learner locked the phone or switched to another app during a session, then comes back to koke. If the phone was away longer than a fixed threshold, koke asks "You were away for N minutes. Were you still studying?" Answering "yes" keeps the session running. Answering "no" ends the session at the moment the phone went away. Shorter absences are treated as "still studying" without asking.
+Locking the phone or switching to another app does not end a session. Studying on paper with the phone locked on the desk is the normal case, and the session simply keeps running.
+
+What koke does is notice when the phone comes back. When the learner reopens koke after it was away longer than a fixed threshold, it asks "You were away for N minutes. Were you still studying?" The default is yes: answering "yes" (or dismissing the question) keeps the session running as if nothing happened. Only answering "no" ends the session, and then the end time is the moment the phone went away, so time spent elsewhere is not counted. Shorter absences are never asked about.
 
 ### L6. Forget to stop
 
@@ -43,9 +45,9 @@ The learner leaves a session running and never comes back. After a fixed interva
 
 The learner opens koke on the iPhone or in a browser on a PC and sees:
 
-- a GitHub-style heatmap where each cell is one day and its shade is the total minutes studied that day
-- the same heatmap filtered to a single subject, or showing all subjects together
-- weekly and monthly totals, and the current run of consecutive study days
+- one GitHub-style heatmap where each cell is one day and its shade is the total minutes studied that day
+- a subject filter next to it (all subjects, or a chosen subject) that changes what the heatmap counts; there is only ever one heatmap on screen
+- weekly and monthly totals, and the current run of consecutive study days, for the same filter
 
 Uncategorized sessions count toward the "all subjects" view and the totals, but do not appear under any single subject.
 
@@ -63,7 +65,7 @@ The learner adds subjects, reorders them and hides the ones they no longer use. 
 
 ### A1. Invite a learner
 
-The admin creates an account for a family member and hands them an invitation. How identity and authentication work is not decided yet (see the open decisions).
+The admin creates an account for a learner and hands them an invitation. How identity and authentication work is not decided yet (see the open decisions).
 
 ### A2. Read the records
 
