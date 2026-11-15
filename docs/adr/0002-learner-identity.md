@@ -27,30 +27,35 @@ Learners are identified by **device tokens issued through invitation links**. Si
 
 ### Invitation (A1)
 
-1. The admin creates an invitation for a `user_id` in D1: a random one-time code, stored hashed, valid for 24 hours. The admin then hands the learner `https://<koke origin>/invite/<code>` directly (in person or by direct message).
-2. Opening the link in Safari shows the add-to-home-screen instructions. The page links a manifest generated for this invitation, whose `start_url` is `/?handoff=<code>`. Opening the page does not use up the code, so link previews in chat apps cannot spend it.
-3. On the first launch from the home screen, the PWA sends the code to the server, which marks the invitation used and issues a device token.
-4. If the code has expired or was already used, koke says so and asks the learner to get a new link from the admin. It does not offer self-service recovery.
+1. The admin creates an invitation for a `user_id` in D1: a one-time code of at least 128 random bits, stored hashed, valid for 24 hours. The admin then hands the learner `https://<koke origin>/invite/<code>` directly (in person or by direct message).
+2. Opening the link in Safari shows the add-to-home-screen instructions. The page links a manifest generated for this invitation, whose `start_url` is `/?handoff=<code>`. No GET request changes login state: not the invitation page, not the manifest, not the launch URL. Ordinary link previews in chat apps therefore cannot spend the code. A scanner that runs the page's JavaScript could, and the leak consequence below covers that.
+3. When the PWA launches, it first checks for a valid device cookie. If there is one, it is signed in and the `handoff` code is ignored, even if the code is spent or belongs to another account; koke never switches accounts implicitly. Only without a valid cookie does the page `POST` the code to the server, which marks the invitation used and issues a device token in the same transaction. The page then removes `handoff` from the address with `history.replaceState`.
+4. If there is no valid cookie and the code has expired or was already used, koke says so and asks the learner to get a new link from the admin. It does not offer self-service recovery.
+5. Responses that carry a code in the URL send `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, and codes are never written to logs.
 
 ### Device tokens
 
-- A device token is 32 random bytes in an `HttpOnly; Secure; SameSite=Lax` cookie. D1 stores only its SHA-256 in `devices`, with `user_id`, `kind` (`phone` or `pc`), a label, and the issue and revoke times.
-- Every API request resolves cookie → `devices` → `user_id`. All queries are scoped to that `user_id`.
-- The cookie is re-issued on use, so an active device stays signed in.
+- A device token is 32 random bytes in a cookie named `__Host-koke` with `Path=/; Max-Age=34560000` (400 days); `HttpOnly; Secure; SameSite=Lax`, and no `Domain`. D1 stores only its SHA-256 in `devices`, with `user_id`, `kind` (`phone` or `pc`), the device it was paired from (for `pc`), a label, and the issue and revoke times.
+- Every API request resolves cookie → `devices` → `user_id`. A device counts as valid only if neither it nor the device it was paired from has been revoked.
+- Authorisation is more than adding `user_id` to queries. Any `session_id`, `subject_id` or other ID the client sends must belong to that `user_id`, a session's revisions must all share one `user_id`, and views such as `sessions_current` must not mix users. #3 defines these rules.
+- Requests that change state check the `Origin` header against koke's own origin.
+- The cookie is re-issued on use with a fresh `Max-Age`, so an active device stays signed in.
 - `pc` devices are read-only: the API rejects any write from them (L7: PC is view-only).
 - The admin revokes a device by setting its revoke time in D1. This is the device table, not session data, so the append-only rule for sessions does not apply.
 
 ### PC browser (L7)
 
-1. On the iPhone, the learner opens "use on a PC". koke shows a 6-digit pairing code that is valid for 5 minutes and single use.
-2. The learner opens koke on the PC and types the code.
-3. The server issues a `pc` device token for the same `user_id`.
+1. On the iPhone, the learner opens "use on a PC". koke shows a 6-digit pairing code from a cryptographic random source, valid for 5 minutes and single use. Codes in force at the same time never collide. The code records which phone issued it.
+2. The learner opens koke on the PC. Without a valid cookie, a PC browser goes to the pairing page, not the "ask for an invitation" message, and the learner types the code there.
+3. The server checks that the issuing phone is still valid, then issues a `pc` device token for the same `user_id` and spends the code in the same transaction.
+
+Guessing is limited by fixed constants. A wrong guess cannot be tied to any one code, so the limit is service-wide: after 5 wrong attempts in total, every unused pairing code is spent and pairing stops for 15 minutes. While a code is in force, an attacker therefore gets at most 5 guesses at it, a 1 in 200,000 chance. A learner who mistypes simply shows a new code once the pause ends.
 
 No admin is involved, and nothing needs to be typed on the phone.
 
-### New or lost phone
+### New or lost phone, or a leaked link
 
-The admin revokes the old device and issues a new invitation for the same `user_id`. The records carry on under that `user_id`.
+The admin revokes every device of that `user_id`. This also invalidates any PC paired from them and any unused pairing code. The admin then issues a new invitation for the same `user_id`, and the records carry on under it.
 
 ## Why
 
@@ -64,15 +69,15 @@ The admin revokes the old device and issues a new invitation for the same `user_
 
 ### Alternatives considered
 
-- **Sign in with Google.** The spike showed the round trip through another origin lands back in the PWA with its cookie, so it works on iOS. It makes PC sign-in and phone replacement self-service. It also adds a sign-in step to L1, may need parent approval on supervised Family Link accounts, and needs an OAuth client in Google Cloud for the admin to set up and maintain. For a handful of invited learners, the admin handling replacements by hand costs less. Filed as #14 for later.
+- **Sign in with Google.** In the spike, leaving the PWA for another origin and following a link back into the PWA's scope returned to the PWA with its cookie, so iOS does not rule it out. An HTTP redirect back (as OAuth uses) and Google's own acceptance of that browser sheet were not tested; #14 checks both. It makes PC sign-in and phone replacement self-service. It also adds a sign-in step to L1, may need parent approval on supervised Family Link accounts, and needs an OAuth client in Google Cloud for the admin to set up and maintain. For a handful of invited learners, the admin handling replacements by hand costs less. Filed as #14 for later.
 - **Passkeys.** These add a Face ID registration step to L1. On a Windows PC, signing in goes through a cross-device QR flow.
 - **Magic links by email.** These need an email sender and a learner email address. The link opens in Safari, not in the home-screen PWA, so every sign-in would land in the wrong place on iOS.
 - **Sign in with Apple.** This needs a paid Apple Developer Program membership.
 
 ## Consequences
 
-- **A leaked invitation link lets someone else become that learner.** The link is single use and lasts 24 hours, and the admin hands it over directly. If it is used by the wrong person, the learner's own first launch fails with "already used", which makes the leak visible. The admin then revokes the device and reissues the invitation.
-- **The handoff relies on the manifest `start_url`, not on iOS copying Safari's cookies.** The spike saw both work, but the cookie copy is undocumented iOS behaviour. If a learner adds koke to the home screen from a page other than the invitation, the PWA launches without a code and they need a new link.
+- **A leaked invitation link lets someone else become that learner.** The link is single use and lasts 24 hours, and the admin hands it over directly. If it is used by the wrong person, the learner's own first launch fails with "already used", which makes the leak visible. The admin then revokes every device of that learner and reissues the invitation.
+- **The handoff relies on the manifest `start_url`, not on iOS copying Safari's cookies.** The spike saw both work, but the cookie copy is undocumented iOS behaviour. If a learner adds koke to the home screen from a page other than the invitation, the PWA launches without a code. The likely fix is to delete the icon and add it again from a new invitation page; #13 confirms this on a real device and writes down the steps.
 - **Losing the phone means asking the admin.** This is acceptable at koke's scale; #14 would remove it.
 - **Cookie lifetime over long idle periods is unverified.** A device that is not opened for many weeks may lose its cookie and need a new invitation. The implementation should check this on a real device.
 - The tables (`users`, `invitations`, `devices`, `pairing_codes`) and endpoints are built in #13. #3 relies on the `user_id` they provide.

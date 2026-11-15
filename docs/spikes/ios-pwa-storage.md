@@ -16,21 +16,22 @@ A learner opens an invitation in Safari and then adds koke to the home screen (L
 | localStorage written in Safari is visible in the PWA | no |
 | The manifest's `start_url` (`/?handoff=<code>`), served per invitation, is used when launching from the home screen | yes |
 | A cookie set inside the PWA is still there after swiping the app away and relaunching | yes |
-| Leaving the PWA for another origin and redirecting back keeps the login in the PWA | yes |
+| Leaving the PWA for another origin and following a link back keeps the login in the PWA | yes |
 
 Details of the round trip (A):
 
 - Navigating to the other origin opened an in-app browser sheet on top of the PWA.
 - Inside that sheet, `matchMedia("(display-mode: standalone)")` still reported `true`, so display mode cannot tell the sheet from the app.
-- Redirecting back to a URL inside the PWA's scope closed the sheet and loaded the page in the PWA itself. The cookie set by that response was then visible to the PWA.
+- Tapping a link (the fake provider's "Allow") back to a URL inside the PWA's scope closed the sheet and loaded the page in the PWA itself. The cookie set by that response was then visible to the PWA. This was a link the user tapped, not an HTTP redirect; a real OAuth provider redirects, which was not tested.
 
 ## What this means for #8
 
 - **Invitation link + device token works without adding a step to L1.** The per-invitation `start_url` carries a one-time code into the PWA's first launch, where it can be exchanged for a device token. This path relies on the standard manifest `start_url`. The cookie copy from Safari also worked, but it is undocumented iOS behaviour, so it should not be the only path.
-- **Sign in with Google is not ruled out by iOS.** The round trip lands back in the PWA with its cookie. This used a fake identity provider; Google's own policies (for example on supervised Family Link accounts) were not tested.
+- **Sign in with Google is not ruled out by iOS.** The round trip landed back in the PWA with its cookie. This used a fake identity provider and a tapped link. An HTTP redirect back, and Google's own policies (whether it accepts this browser sheet, and parent approval on supervised Family Link accounts), were not tested.
 
 ## Not covered
 
 - How long cookies survive in the PWA over weeks without use.
-- Real Google sign-in.
+- Real Google sign-in, and returning by HTTP redirect instead of a tapped link.
+- What happens when a launch carries both a valid cookie and a spent `handoff` code; the spike only displayed values.
 - Adding to the home screen from a page that is not the invitation (the `start_url` would then carry no code).
