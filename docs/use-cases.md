@@ -43,7 +43,7 @@ The learner leaves a session running and never comes back. After a fixed interva
 
 ### L7. Look at the moss
 
-The learner opens koke on the iPhone or in a browser on a PC and sees:
+The learner opens koke on the iPhone or in a browser on a PC (the first time on a PC, they type a short pairing code that koke shows on the iPhone) and sees:
 
 - one GitHub-style heatmap where each cell is one day and its shade is the total minutes studied that day
 - a subject filter next to it (all subjects, or a chosen subject) that changes what the heatmap counts; there is only ever one heatmap on screen
@@ -65,7 +65,7 @@ The learner adds subjects, reorders them and hides the ones they no longer use. 
 
 ### A1. Invite a learner
 
-The admin creates an account for a learner and hands them an invitation. How identity and authentication work is not decided yet (see the open decisions).
+The admin creates an account for a learner and hands them a single-use invitation link directly. Opening it on the iPhone and adding koke to the home screen signs that phone in (ADR 2). When the learner replaces or loses the phone, the admin issues a new invitation for the same account and the records carry on.
 
 ### A2. Read the records
 
@@ -90,4 +90,4 @@ These are constants in the code, not settings. Changing them means a deploy.
 
 ## Open decisions
 
-- How learners are identified and authenticated (passkey, magic link, Sign in with Apple/Google, or invitation link plus device token), and how the same account is used on both the iPhone and a PC browser
+None at the moment. Hosting is decided in ADR 1 and learner identity in ADR 2 (`docs/adr/`).
