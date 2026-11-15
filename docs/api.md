@@ -10,9 +10,9 @@ All times are UTC epoch milliseconds. Days are JST calendar days, worked out in 
 |---|---|---|
 | `users` | insert; `display_name` may change | One row per learner. Every other row hangs off `user_id`. |
 | `subjects` | edited in place | A learner's subject list (L9): `name`, `position`, `hidden`. Hidden subjects keep their sessions. |
-| `sessions` | **insert only** | Fixes a session's owner and the order sessions were created in. |
+| `sessions` | **insert only** | Fixes a session's owner and the order sessions were created in. Always inserted in the same D1 batch as the session's rev 1. |
 | `session_revisions` | **insert only** | The history of each session (below). |
-| `push_subscriptions` | insert and delete | Where to send "still studying?" (L6). |
+| `push_subscriptions` | insert and delete | Where to send "still studying?" (L6). One per subscribing device. |
 
 Login tables (`invitations`, `devices`, `pairing_codes`) are added by #13 (ADR 2).
 
@@ -37,13 +37,16 @@ A session is **running** when its current revision has `ended_at` null and `dele
 
 - A revision's `user_id` must own both the session and the subject. A bug in the API cannot write across learners.
 - `rev` must be exactly one more than the current head. Otherwise the insert is **ignored, not failed**: a double-fired request from the client changes nothing, and the API reports `applied: false` with the current head. The API does not retry.
+- Checks run in a fixed order inside one trigger, so a stale insert is always ignored, never failed by a later check.
 - An ended or deleted session cannot be reopened.
-- **Only a learner's latest session can be running.** A new session cannot start while the previous one is running, and ended sessions stay ended, so the running session, if any, is always the learner's highest `session_id`. The L6 job relies on this (see "Query cost").
+- **Only a learner's latest session can be running.** A `sessions` row can be inserted only when the learner's latest session has revisions and is ended or deleted; rev 1 can be written only to the learner's latest session; ended sessions stay ended. So the running session, if any, is always the learner's highest `session_id`. The L6 job relies on this (see "Query cost"). A `sessions` row without rev 1 would block the learner's next start, which is why the two are always inserted in one batch.
+- `INSERT OR REPLACE` cannot rewrite a `sessions` row.
 - `ended_at` ≥ `started_at`.
 
 ### Rules the API enforces
 
 - `started_at` and `ended_at` are never in the future.
+- When an end time comes from a recorded moment rather than from the learner (`away_at` for "not studying" in L5, `prompted_at` for a timeout in L6), it is raised to `started_at` if it is earlier. This happens when a fix moved the start after that moment. An `ended_at` the learner typed in L8 that is before `started_at` is refused with `400`.
 - A fix (L8) moves `started_at` at most 7 days away from the session's `sessions.created_at`. The summary query finds sessions by creation time, and this bound keeps it exact. A learner fixing a session normally moves it by minutes or hours.
 
 ## Requests and authorisation
@@ -82,13 +85,21 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
 
 | Request | Body | Notes |
 |---|---|---|
-| `POST /api/sessions` | `{ "subject_id": 4 }` or `{}` for "not decided" | L2. `409` if a session is running. Returns `{ "session": … }`. |
+| `POST /api/sessions` | `{ "subject_id": 4 }` or `{}` for "not decided" | L2. Inserts the `sessions` row and rev 1 in one D1 batch. `409` if a session is running (the schema refuses the `sessions` row). Returns `{ "session": … }`. |
 | `POST /api/sessions/:id/stop` | `{ "base_rev": 3, "ended_at"?: … }` | L4. `ended_at` defaults to now. For "not studying" after an absence (L5), it is the `away_at` the client recorded. |
 | `POST /api/sessions/:id/away` | `{ "base_rev": 3, "away_at": … }` | L5, sent with `sendBeacon` when the page is hidden. Never ends the session. |
 | `POST /api/sessions/:id/extend` | `{ "base_rev": 4 }` | L6, sent when the learner opens koke from the notification. Clears `prompted_at`. |
-| `POST /api/sessions/:id/switch` | `{ "base_rev": 3, "subject_id": 5 }` | L3. Stops this session and starts a new one in one D1 batch. Returns `{ "applied": …, "session": <new> }`. |
+| `POST /api/sessions/:id/switch` | `{ "base_rev": 3, "subject_id": 5 }` | L3. Stops this session and starts a new one in one D1 batch (below). Returns `{ "applied": …, "session": <new, or the current head if not applied> }`. |
 | `POST /api/sessions/:id/adjust` | `{ "base_rev": 6, "started_at"?, "ended_at"?, "subject_id"?, "deleted"? }` | L8. Any subset. A running session can change its start or subject. Setting `ended_at` on it stops it. Cannot reopen. |
 | `GET /api/sessions?from=&to=` | – | L8 list: current heads of non-deleted sessions started in the range, newest first. |
+
+The switch batch has three statements. The second and third are `INSERT … SELECT … WHERE`, so they insert nothing when the stop was ignored:
+
+1. The stop revision at `base_rev + 1`, with `ended_at` and `created_at` = now.
+2. The new `sessions` row, only if the revision at `base_rev + 1` is that stop (same `source`, `ended_at` and `created_at`).
+3. Rev 1 of the new session, only if the learner's latest session was created at now and has no revisions yet.
+
+`POST /api/sessions` uses statements 2 and 3 without the condition on a stop.
 
 ### Moss
 
@@ -99,9 +110,9 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
   "week_minutes": 410, "month_minutes": 1620, "streak_days": 6 }
 ```
 
-- `days` covers the last 53 weeks. Days with no study are left out.
+- `days` covers the last 53 weeks: from JST 00:00 of the day 370 days before today, through today. Days with no study are left out.
 - `subject=all` includes uncategorised sessions. A single subject never does (L7).
-- Weeks start on Monday (JST). `streak_days` counts back from today; if nothing has been studied yet today, it counts back from yesterday, so the streak does not break until the day is over.
+- Weeks start on Monday (JST). `streak_days` counts back from today; if nothing has been studied yet today, it counts back from yesterday, so the streak does not break until the day is over. If every day back to the start of the 53 weeks was studied, the API reads the 53 weeks before that with the same query, and so on until it finds a day without study. Only a streak longer than a year costs a second read.
 - Hidden subjects still count under `all`.
 
 ### Subjects (L9)
@@ -115,26 +126,28 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
 
 ### Push (L1, L6)
 
-`POST /api/push-subscriptions` with the `PushSubscription` JSON. Stored per `user_id`. Subscriptions that the push service answers with `404` or `410` are deleted.
+`POST /api/push-subscriptions` with the `PushSubscription` JSON. Stored with the `user_id` and the `device_id` of the phone that sent it. Revoking a device deletes its subscriptions (#13), so a lost phone stops receiving pushes. Subscriptions that the push service answers with `404` or `410` are deleted.
 
 ## The L6 job
 
 Every minute, a Cron Trigger:
 
 1. Finds each learner's running session (query below).
-2. If the latest revision of the session was created more than the fixed interval ago and `prompted_at` is null, it appends a `prompt` revision and sends "still studying?" with a TTL equal to the wait.
-3. If `prompted_at` is older than the fixed wait, it appends a `timeout` revision ending the session at `prompted_at`.
+2. If the latest revision of the session was created more than the fixed interval ago and `prompted_at` is null, it appends a `prompt` revision. Only if that insert was applied (`RETURNING` gives a row) does it send "still studying?", with a TTL equal to the wait. An ignored insert means the learner acted at the same moment, and nothing is sent.
+3. If `prompted_at` is older than the fixed wait, it appends a `timeout` revision ending the session at `prompted_at` (raised to `started_at` if earlier, see "Rules the API enforces").
 
 Interval, wait and absence threshold are constants in code (use cases, "Fixed in v1"). #6 picks their values.
 
 ## Query cost
 
-D1 bills rows scanned (ADR 1). The two hot queries were measured on synthetic histories built with `scripts/seed-synthetic.mjs`. The data was 5 learners, 5 sessions a day and about 8 revisions per session: 1 year was 72,823 revisions and 3 years was 218,434. Rows visited were counted with SQLite's scan statistics on the local D1 file. This approximates D1's `rows_read`; confirm on the remote database when #4 creates it.
+D1 bills rows scanned (ADR 1). The two hot queries were measured on synthetic histories built with `scripts/seed-synthetic.mjs`. The data was 5 learners, 5 sessions a day and about 8 revisions per session: 1 year was 72,823 revisions and 3 years was 218,434.
 
-| Query | Rows visited, 1 year | Rows visited, 3 years | Per day |
+The 1-year history was loaded into a temporary remote D1 database, and `rows_read` was taken from the query results' metadata. Both 1- and 3-year histories were also measured locally with SQLite's scan statistics, which show whether the cost grows with history. For the summary, D1 reported about 1,800 rows more than the local count, close to the number of sessions in the window; the likely source is the `GROUP BY` sort, which the local count leaves out. Plan with D1's figure.
+
+| Query | D1 `rows_read`, 1 year | Rows visited locally, 1 year / 3 years | Per day |
 |---|---|---|---|
-| L6 job: running session per learner | 30 | 30 | 1,440 runs ≈ 43,000 rows |
-| L7 summary for one learner | ≈ 5,500 | ≈ 5,700 | about 870 views fit in the 5 million free rows |
+| L6 job: running session per learner | 30 | 30 / 30 | 1,440 runs ≈ 43,000 rows |
+| L7 summary for one learner | 7,301 | ≈ 5,500 / ≈ 5,700 | about 680 views fit in the 5 million free rows |
 
 The job's cost depends only on the number of learners. The summary's depends only on the sessions in its 53-week window. Neither grows with total history.
 
@@ -154,7 +167,7 @@ FROM heads JOIN session_revisions r ON r.session_id = heads.session_id AND r.rev
 WHERE r.ended_at IS NULL AND r.deleted = 0;
 ```
 
-The summary query (for `?now` and `?from` = now − 371 days):
+The summary query (for `?now`, and `?from` = JST 00:00 of the day 370 days before today):
 
 ```sql
 WITH recent AS (
@@ -171,7 +184,7 @@ WHERE h.deleted = 0 AND h.started_at >= ?from
 GROUP BY day ORDER BY day;
 ```
 
-On the 3-year history its result matched a full scan of `sessions_current` for all 371 days.
+On the 3-year history its result matched a full scan of `sessions_current` for every day in the window.
 
 Avoid `sessions_current` in the API: it scans every revision.
 
