@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "koke-storage-spike",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "public", "binding": "ASSETS" },
+  // Overridden at deploy time with the fake IdP's workers.dev origin.
+  "vars": { "IDP_ORIGIN": "http://localhost:8788" }
+}
