@@ -1,0 +1,7 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "koke",
+  "compatibility_date": "2026-11-01",
+  // The Worker itself arrives with #4; for now this only carries the database and its migrations.
+  "d1_databases": [{ "binding": "DB", "database_name": "koke", "migrations_dir": "migrations" }]
+}

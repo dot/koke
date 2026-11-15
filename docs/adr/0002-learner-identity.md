@@ -80,4 +80,4 @@ The admin revokes every device of that `user_id`. This also invalidates any PC p
 - **The handoff relies on the manifest `start_url`, not on iOS copying Safari's cookies.** The spike saw both work, but the cookie copy is undocumented iOS behaviour. If a learner adds koke to the home screen from a page other than the invitation, the PWA launches without a code. The likely fix is to delete the icon and add it again from a new invitation page; #13 confirms this on a real device and writes down the steps.
 - **Losing the phone means asking the admin.** This is acceptable at koke's scale; #14 would remove it.
 - **Cookie lifetime over long idle periods is unverified.** A device that is not opened for many weeks may lose its cookie and need a new invitation. The implementation should check this on a real device.
-- The tables (`users`, `invitations`, `devices`, `pairing_codes`) and endpoints are built in #13. #3 relies on the `user_id` they provide.
+- `users` is created with the session schema in #3, since every other table hangs off it. `invitations`, `devices`, `pairing_codes` and the login endpoints are built in #13.

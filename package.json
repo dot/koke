@@ -1,0 +1,12 @@
+{
+  "name": "koke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:migrate:local": "wrangler d1 migrations apply koke --local",
+    "db:seed:synthetic": "node scripts/seed-synthetic.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}
