@@ -21,9 +21,11 @@ The learner receives an invitation from the admin, opens the link on their iPhon
 
 ### L2. Start studying
 
-The learner opens koke. Because no session is running, the screen shows the subject buttons. Tapping a subject starts a session for that subject. There is also a "not decided" button that starts an uncategorized session. The subject used last time is shown first.
+The learner opens koke. Because no session is running, the screen shows one large "start" button, with the subject buttons below it. "Start" begins an uncategorized session; tapping a subject begins a session for that subject. The row holding the subject used last time is shown first. Starting never requires choosing a subject.
 
-### L3. Switch subject mid-session
+### L3. Pick or switch subject mid-session
+
+While an uncategorized session is running, the learner can pick a subject for it. The subject applies to the whole session from its start; nothing is split. koke never asks the learner to pick one.
 
 While a session is running, the learner taps "switch subject" and picks another subject. The current session ends at that moment and a new one starts for the new subject. No time is split retroactively.
 
@@ -45,11 +47,11 @@ The learner leaves a session running and never comes back. After a fixed interva
 
 The learner opens koke on the iPhone or in a browser on a PC (the first time on a PC, they type a short pairing code that koke shows on the iPhone) and sees:
 
-- one GitHub-style heatmap where each cell is one day and its shade is the total minutes studied that day
-- a subject filter next to it (all subjects, or a chosen subject) that changes what the heatmap counts; there is only ever one heatmap on screen
+- one view at a time, switched between three periods: **year** (a GitHub-style heatmap of 53 weeks, one cell per day; tapping it opens that month), **month** (the month as a calendar heatmap whose days can be tapped to show their minutes) and **week** (the seven days as bars with their minutes). Shades use the same fixed steps in every period.
+- a subject filter (all subjects, a subject group, or a single subject) that changes what the view counts; choosing a group counts its sub-subjects too
 - weekly and monthly totals, and the current run of consecutive study days, for the same filter
 
-Uncategorized sessions count toward the "all subjects" view and the totals, but do not appear under any single subject.
+Uncategorized sessions count toward the "all subjects" view and the totals, but do not appear under any subject or group.
 
 A session belongs to the day it started, even if it ran past midnight.
 
@@ -60,6 +62,8 @@ The learner opens a past session and changes its start time, end time or subject
 ### L9. Manage subjects
 
 The learner adds subjects, reorders them and hides the ones they no longer use. Hidden subjects keep their past records. Each learner has their own subject list.
+
+Subjects can be grouped one level deep: a subject may sit under a parent subject (for example Math > Math I). A session has at most one subject, either a parent or a child; it may have none.
 
 ## Admin use cases
 
