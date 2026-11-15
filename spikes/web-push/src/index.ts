@@ -33,7 +33,8 @@ async function log(env: Env, entry: Record<string, unknown>): Promise<void> {
 }
 
 async function handleSend(req: Request, env: Env, url: URL): Promise<Response> {
-  if (req.headers.get("Authorization") !== `Bearer ${env.SEND_TOKEN}`) {
+  // An unset secret would otherwise compare equal to the literal header "Bearer undefined".
+  if (!env.SEND_TOKEN || req.headers.get("Authorization") !== `Bearer ${env.SEND_TOKEN}`) {
     return json({ error: "unauthorized" }, 401);
   }
   const ttl = Number(url.searchParams.get("ttl") ?? "60");

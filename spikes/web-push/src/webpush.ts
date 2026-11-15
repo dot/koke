@@ -14,6 +14,10 @@ export interface PushOptions {
 
 const enc = new TextEncoder();
 
+// RFC 8291 §4: push services need only accept 4096-byte bodies; 86 bytes of header and 17 bytes of
+// delimiter + tag leave 3993 for the payload, which also keeps it inside the single 4096-byte record.
+const MAX_PAYLOAD_BYTES = 3993;
+
 export function b64urlEncode(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
@@ -106,7 +110,11 @@ export async function sendPush(
   privateJwk: JsonWebKey,
   opts: PushOptions,
 ): Promise<Response> {
-  const body = await encryptPayload(sub, enc.encode(payload));
+  const bytes = enc.encode(payload);
+  if (bytes.length > MAX_PAYLOAD_BYTES) {
+    throw new Error(`push payload is ${bytes.length} bytes; the limit is ${MAX_PAYLOAD_BYTES}`);
+  }
+  const body = await encryptPayload(sub, bytes);
   return fetch(sub.endpoint, {
     method: "POST",
     headers: {

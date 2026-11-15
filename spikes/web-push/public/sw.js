@@ -30,16 +30,15 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const id = event.notification.data?.id ?? "?";
-  event.waitUntil(
-    (async () => {
-      await ack(id, "clicked");
-      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      if (wins.length > 0) {
-        await wins[0].focus();
-        wins[0].postMessage({ clicked: id });
-      } else {
-        await self.clients.openWindow(`/?clicked=${encodeURIComponent(id)}`);
-      }
-    })(),
-  );
+  // Open the app without waiting on the network: focus/openWindow are only allowed shortly after the tap.
+  const show = (async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (wins.length > 0) {
+      await wins[0].focus();
+      wins[0].postMessage({ clicked: id });
+    } else {
+      await self.clients.openWindow(`/?clicked=${encodeURIComponent(id)}`);
+    }
+  })();
+  event.waitUntil(Promise.all([show, ack(id, "clicked")]));
 });
