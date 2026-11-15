@@ -1,0 +1,17 @@
+{
+  "name": "koke-push-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit",
+    "secrets": "node scripts/gen-secrets.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261115.1",
+    "typescript": "~5.9.3",
+    "wrangler": "^4.162.0"
+  }
+}

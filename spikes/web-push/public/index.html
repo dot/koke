@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>koke push spike</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <style>
+    :root { --bg: #f4f1e8; --fg: #222; --muted: #666; --accent: #3f6b3a; --line: #ddd; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1b1d1a; --fg: #e8e8e2; --muted: #9a9a92; --accent: #8fbf7f; --line: #333; } }
+    body { margin: 0; padding: 16px; font: 15px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 16px; }
+    dt { color: var(--muted); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    button { font: inherit; padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: var(--bg); margin: 0 8px 8px 0; }
+    #banner { padding: 8px 12px; border-left: 4px solid var(--accent); margin-bottom: 12px; }
+    #banner:empty { display: none; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td { border-top: 1px solid var(--line); padding: 4px 6px 4px 0; vertical-align: top; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <h1>koke push spike</h1>
+  <div id="banner"></div>
+  <dl>
+    <dt>standalone</dt><dd id="standalone"></dd>
+    <dt>permission</dt><dd id="permission"></dd>
+    <dt>subscribed</dt><dd id="subscribed"></dd>
+    <dt>user agent</dt><dd id="ua"></dd>
+  </dl>
+  <button id="enable">Enable notifications</button>
+  <button id="refresh">Refresh log</button>
+  <table><tbody id="log"></tbody></table>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+    function b64urlToBytes(s) {
+      const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+      return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    }
+
+    async function ack(id, kind, detail) {
+      await fetch("/ack", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, kind, detail }) });
+    }
+
+    async function render() {
+      $("standalone").textContent = String(standalone);
+      $("permission").textContent = "Notification" in window ? Notification.permission : "Notification API missing";
+      $("ua").textContent = navigator.userAgent;
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      $("subscribed").textContent = sub ? new URL(sub.endpoint).host : "no";
+      const entries = await (await fetch("/log")).json();
+      $("log").replaceChildren(...entries.reverse().map((e) => {
+        const tr = document.createElement("tr");
+        const { at, kind, ...rest } = e;
+        for (const v of [at.slice(11, 19), kind, JSON.stringify(rest)]) {
+          const td = document.createElement("td");
+          td.textContent = v;
+          tr.append(td);
+        }
+        return tr;
+      }));
+    }
+
+    // Permission must be requested from a user gesture on iOS, so this only runs on tap.
+    $("enable").addEventListener("click", async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") throw new Error(`permission ${permission}`);
+        const reg = await navigator.serviceWorker.ready;
+        const { key } = await (await fetch("/vapid-public-key")).json();
+        const sub = (await reg.pushManager.getSubscription())
+          ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(key) });
+        const label = `${standalone ? "pwa" : "tab"} ${navigator.platform}`;
+        await fetch("/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, subscription: sub.toJSON() }) });
+        $("banner").textContent = "Subscribed.";
+      } catch (e) {
+        $("banner").textContent = `Failed: ${e.message}`;
+      }
+      render();
+    });
+    $("refresh").addEventListener("click", render);
+
+    navigator.serviceWorker.addEventListener("message", async (e) => {
+      if (e.data?.clicked) {
+        $("banner").textContent = `Opened from notification ${e.data.clicked} (app was already running).`;
+        await ack(e.data.clicked, "opened", "focused existing window");
+        render();
+      }
+    });
+
+    (async () => {
+      await navigator.serviceWorker.register("/sw.js");
+      const clicked = new URLSearchParams(location.search).get("clicked");
+      if (clicked) {
+        $("banner").textContent = `Opened from notification ${clicked} (cold start).`;
+        await ack(clicked, "opened", "new window");
+        history.replaceState(null, "", "/");
+      }
+      render();
+    })();
+  </script>
+</body>
+</html>
