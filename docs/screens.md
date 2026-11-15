@@ -1,0 +1,80 @@
+# Screens
+
+What each screen of the PWA shows and when. The use cases in `docs/use-cases.md` decide what koke does; this document decides how it looks. The prototype in `spikes/ui-prototype/` is the visual reference. UI text is Japanese; the strings below are the ones the prototype uses.
+
+## Layout
+
+- Header: the name "koke". On a PC it adds "閲覧のみ" (view only).
+- Tab bar at the bottom (iPhone only): 勉強 (study), 苔 (moss), 記録 (records), 教科 (subjects). koke opens on 勉強.
+- A PC shows only the moss, without the tab bar (L7: PC is view-only).
+- The header, tab bar and every bottom sheet pad by `env(safe-area-inset-*)`, so the notch and home bar never cover a control.
+- Choices open as bottom sheets (drawer). Questions that need an answer, and delete confirmations, are alert dialogs.
+
+## 勉強: start (L2)
+
+Shown when no session is running.
+
+- One large "始める" (start) button. It starts an uncategorized session.
+- Below it, "教科を決めて始める" (start with a subject) and the subject buttons: one row per parent subject, with the parent first and its visible children after it, so any subject is one tap. The row holding the subject used last comes first. Hidden subjects are left out; hiding a parent hides its row.
+
+## 勉強: running (L3, L4)
+
+Shown while a session is running.
+
+- Elapsed time (h:mm:ss) and the start time ("16:05 から").
+- Above the time:
+  - Uncategorized session: a dashed "＋教科" chip. Tapping it opens the subject sheet titled "何を勉強してる？" with "<start time> から、この教科として記録します". The chosen subject applies to the whole session from its start. Nothing prompts the learner to use it.
+  - Session with a subject: the subject, as "数学 › 数I" for a child.
+- "終わる" (stop): ends the session now.
+- "教科を切り替える" (switch subject), only for a session with a subject: opens the subject sheet titled "何に切り替える？" with "いまの記録はここで区切り、新しく始めます". Picking a subject ends this session now and starts a new one. The current subject is left out of the sheet.
+
+## Absence question (L5)
+
+An alert dialog over the running screen, shown when koke comes back after being away longer than the fixed threshold.
+
+- Title "N 分離れていました", text "その間も勉強していましたか？".
+- "していた" (yes) keeps the session running. Dismissing the dialog in any other way counts as yes.
+- "していなかった" (no) ends the session at the moment koke went away.
+
+## Opened from the notification (L6)
+
+Tapping the "still studying?" notification opens the running screen and extends the session. A short banner says "通知から開いたので、そのまま続けています" and fades after a few seconds.
+
+## 苔: moss (L7)
+
+- Top: the subject filter (select) and, on the iPhone, "PC で見る".
+  - Filter choices: "すべての教科"; each parent, labelled "数学（まとめて）" when it has children, which counts the parent and its children; each child as "数学 › 数I". Hidden subjects stay in the filter, since their records stay.
+- A 週 / 月 / 年 (week / month / year) switch. The moss opens on 月.
+- **月 (month):** the month as a Monday-first calendar. Each day is a square cell shaded by its minutes, with the date inside. Tapping a day shows "11月10日（火） 1時間34分" (or "勉強なし") below the calendar, next to the month total. Arrows move one month at a time within the 53-week window. Days outside the window or in the future are faded and cannot be tapped.
+- **週 (week):** Monday to Sunday as seven rows: the date and weekday, a bar, and the minutes. Bars are shaded like the heatmap and scaled to the longest day of the week, but never less than 3 hours, so a light week does not look full. Arrows move one week at a time. The week total sits below.
+- **年 (year):** the last 53 weeks as one heatmap strip that fits the screen width, with month labels and no weekday labels. It is an overview: tapping anywhere opens that day's month in the 月 view.
+- Shades are the same in every view: none, then from 1, 30, 60 and 120 minutes. A legend "少 … 多" sits below the view.
+- Bottom: three tiles for this week's total, this month's total and the current streak ("12日"), for the same filter. They do not change with the view.
+- Uncategorized sessions count only under "すべての教科".
+
+## PC pairing (L7)
+
+- iPhone: "PC で見る" opens a sheet with the 6-digit code, a countdown of how long it stays valid, and a note that the PC can only view.
+- PC without a valid cookie: a code entry (six boxes). A correct code opens the moss.
+
+## 記録: records (L8)
+
+- Sessions grouped by day, newest first, each day headed by its date and total. Each row shows the subject ("教科なし" when uncategorized), the start and end times ("計測中" while running) and the minutes.
+- The list starts with the last 14 days; "もっと前を見る" adds 14 more.
+- Tapping a row opens "記録を直す" (fix a record) in a sheet:
+  - 教科: a select with every subject (children as "数学 › 数I") and "教科なし".
+  - 開始 and 終了: the iOS date-time pickers.
+  - Errors shown inline, and "保存する" disabled while one shows: a time in the future, the end before the start, or the start moved more than 7 days from the original.
+  - "この記録を消す" opens a confirmation ("この記録を消しますか？ 苔からもなくなります。") with "やめる" and "消す".
+
+## 教科: subjects (L9)
+
+- An add form: the name, and "上の教科なし" or "<parent> の下" to place it under a parent. Only top-level subjects can be parents.
+- The list: each parent with its children indented below it. Each row has up and down arrows that move it among its siblings, and a switch that shows or hides it.
+- A note under the list: hidden subjects leave the start buttons, hiding a parent hides its children too, and past records stay in the moss.
+
+## Not in the prototype
+
+- Behaviour when the network is down. #4 decides it, along with the service worker.
+- Renaming a subject or moving it to another parent.
+- The invitation pages (A1, ADR 2). #13 builds them.
