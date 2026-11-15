@@ -8,15 +8,19 @@ CREATE TABLE users (
 );
 
 -- Subjects are settings, not session data, so they are edited in place (L9).
+-- parent_id groups subjects one level deep: a parent never has a parent itself.
 CREATE TABLE subjects (
   subject_id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users (user_id),
+  parent_id  INTEGER REFERENCES subjects (subject_id),
   name       TEXT    NOT NULL,
   position   INTEGER NOT NULL,
   hidden     INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  CHECK (parent_id IS NOT subject_id)
 );
 CREATE INDEX subjects_by_user ON subjects (user_id, position);
+CREATE INDEX subjects_by_parent ON subjects (parent_id);
 
 -- One row per session, never changed: fixes the session's owner and its order of creation.
 CREATE TABLE sessions (
@@ -57,6 +61,25 @@ CREATE INDEX push_subscriptions_by_user ON push_subscriptions (user_id);
 CREATE INDEX push_subscriptions_by_device ON push_subscriptions (device_id);
 
 -- Append-only, enforced here so no code path can rewrite history.
+-- Kept to one level so a filter on a parent is "the parent and its children", with no recursion.
+CREATE TRIGGER subjects_parent_insert BEFORE INSERT ON subjects
+WHEN NEW.parent_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'parent belongs to another user')
+  WHERE NEW.user_id IS NOT (SELECT user_id FROM subjects WHERE subject_id = NEW.parent_id);
+  SELECT RAISE(ABORT, 'subjects nest one level only')
+  WHERE (SELECT parent_id FROM subjects WHERE subject_id = NEW.parent_id) IS NOT NULL;
+END;
+CREATE TRIGGER subjects_parent_update BEFORE UPDATE OF parent_id, user_id ON subjects
+WHEN NEW.parent_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'parent belongs to another user')
+  WHERE NEW.user_id IS NOT (SELECT user_id FROM subjects WHERE subject_id = NEW.parent_id);
+  SELECT RAISE(ABORT, 'subjects nest one level only')
+  WHERE (SELECT parent_id FROM subjects WHERE subject_id = NEW.parent_id) IS NOT NULL
+     OR EXISTS (SELECT 1 FROM subjects WHERE parent_id = NEW.subject_id);
+END;
+
 CREATE TRIGGER sessions_no_update BEFORE UPDATE ON sessions
 BEGIN SELECT RAISE(ABORT, 'sessions are append-only'); END;
 CREATE TRIGGER sessions_no_delete BEFORE DELETE ON sessions
