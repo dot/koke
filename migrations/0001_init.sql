@@ -60,8 +60,19 @@ CREATE TABLE push_subscriptions (
 CREATE INDEX push_subscriptions_by_user ON push_subscriptions (user_id);
 CREATE INDEX push_subscriptions_by_device ON push_subscriptions (device_id);
 
--- Append-only, enforced here so no code path can rewrite history.
--- Kept to one level so a filter on a parent is "the parent and its children", with no recursion.
+-- Subjects nest one level so a filter on a parent is "the parent and its children", with no recursion.
+-- A subject's id and owner never change and a row is never replaced: either would let a child
+-- end up under another learner's subject, or two levels down, without its own row changing.
+CREATE TRIGGER subjects_no_replace BEFORE INSERT ON subjects
+BEGIN
+  SELECT RAISE(ABORT, 'subjects cannot be replaced')
+  WHERE EXISTS (SELECT 1 FROM subjects WHERE subject_id = NEW.subject_id);
+END;
+CREATE TRIGGER subjects_fixed_identity BEFORE UPDATE OF subject_id, user_id ON subjects
+BEGIN
+  SELECT RAISE(ABORT, 'subject id and owner cannot change')
+  WHERE NEW.subject_id IS NOT OLD.subject_id OR NEW.user_id IS NOT OLD.user_id;
+END;
 CREATE TRIGGER subjects_parent_insert BEFORE INSERT ON subjects
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
@@ -70,7 +81,7 @@ BEGIN
   SELECT RAISE(ABORT, 'subjects nest one level only')
   WHERE (SELECT parent_id FROM subjects WHERE subject_id = NEW.parent_id) IS NOT NULL;
 END;
-CREATE TRIGGER subjects_parent_update BEFORE UPDATE OF parent_id, user_id ON subjects
+CREATE TRIGGER subjects_parent_update BEFORE UPDATE OF parent_id ON subjects
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
   SELECT RAISE(ABORT, 'parent belongs to another user')
@@ -80,6 +91,7 @@ BEGIN
      OR EXISTS (SELECT 1 FROM subjects WHERE parent_id = NEW.subject_id);
 END;
 
+-- Append-only, enforced here so no code path can rewrite history.
 CREATE TRIGGER sessions_no_update BEFORE UPDATE ON sessions
 BEGIN SELECT RAISE(ABORT, 'sessions are append-only'); END;
 CREATE TRIGGER sessions_no_delete BEFORE DELETE ON sessions

@@ -43,7 +43,7 @@ A session is **running** when its current revision has `ended_at` null and `dele
 - **Only a learner's latest session can be running.** A `sessions` row can be inserted only when the learner's latest session has revisions and is ended or deleted; rev 1 can be written only to the learner's latest session; ended sessions stay ended. So the running session, if any, is always the learner's highest `session_id`. The L6 job relies on this (see "Query cost"). A `sessions` row without rev 1 would block the learner's next start, which is why the two are always inserted in one batch.
 - `INSERT OR REPLACE` cannot rewrite a `sessions` row.
 - `ended_at` ≥ `started_at`.
-- Subjects nest one level deep: a parent never has a parent, a subject with children never gets one, and a parent belongs to the same learner.
+- Subjects nest one level deep: a parent never has a parent, a subject with children never gets one, and a parent belongs to the same learner. A subject's id and owner never change, and `INSERT OR REPLACE` cannot rewrite one.
 
 ### Rules the API enforces
 
@@ -63,9 +63,11 @@ A session is **running** when its current revision has `ended_at` null and `dele
 A session in a response looks like:
 
 ```json
-{ "session_id": 812, "rev": 3, "subject_id": 4, "started_at": 1794650000000,
-  "ended_at": null, "away_at": 1794651200000, "prompted_at": null }
+{ "session_id": 812, "rev": 3, "subject_id": 4, "recorded_at": 1794650000000,
+  "started_at": 1794650000000, "ended_at": null, "away_at": 1794651200000, "prompted_at": null }
 ```
+
+`recorded_at` is `sessions.created_at` and never changes. The L8 editor uses it to show the 7-day limit on moving the start before saving.
 
 Write requests on an existing session send `base_rev`, the `rev` the client last saw, and get back:
 
@@ -79,9 +81,9 @@ Write requests on an existing session send `base_rev`, the `rev` the client last
 
 ### Screen state
 
-`GET /api/state` → `{ "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null }`
+`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null }`
 
-The PWA calls this on open to pick its screen (#4). `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out.
+The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out.
 
 ### Sessions
 
@@ -91,7 +93,7 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
 | `POST /api/sessions/:id/stop` | `{ "base_rev": 3, "ended_at"?: … }` | L4. `ended_at` defaults to now. For "not studying" after an absence (L5), it is the `away_at` the client recorded. |
 | `POST /api/sessions/:id/away` | `{ "base_rev": 3, "away_at": … }` | L5, sent with `sendBeacon` when the page is hidden. Never ends the session. |
 | `POST /api/sessions/:id/extend` | `{ "base_rev": 4 }` | L6, sent when the learner opens koke from the notification. Clears `prompted_at`. |
-| `POST /api/sessions/:id/subject` | `{ "base_rev": 3, "subject_id": 5 }` | L3, picking a subject for an uncategorized running session. `409` if the session has ended or already has a subject; those go through switch or adjust. |
+| `POST /api/sessions/:id/subject` | `{ "base_rev": 3, "subject_id": 5 }` | L3, picking a subject for an uncategorized running session. A stale `base_rev` is checked first and answers `applied: false` like any other write, so a double-fired request is not a conflict. Only when `base_rev` is the head and that head has ended or already has a subject is the answer `409`; those go through switch or adjust. |
 | `POST /api/sessions/:id/switch` | `{ "base_rev": 3, "subject_id": 5 }` | L3. Stops this session and starts a new one in one D1 batch (below). Returns `{ "applied": …, "session": <new, or the current head if not applied> }`. |
 | `POST /api/sessions/:id/adjust` | `{ "base_rev": 6, "started_at"?, "ended_at"?, "subject_id"?, "deleted"? }` | L8. Any subset. A running session can change its start or subject. Setting `ended_at` on it stops it. Cannot reopen. |
 | `GET /api/sessions?from=&to=` | – | L8 list: current heads of non-deleted sessions started in the range, newest first. |
@@ -99,7 +101,7 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
 The switch batch has three statements. The second and third are `INSERT … SELECT … WHERE`, so they insert nothing when the stop was ignored:
 
 1. The stop revision at `base_rev + 1`, with `ended_at` and `created_at` = now.
-2. The new `sessions` row, only if the revision at `base_rev + 1` is that stop (same `source`, `ended_at` and `created_at`).
+2. The new `sessions` row, only if statement 1 was applied: `WHERE changes() = 1`. An ignored insert reports 0 changes. Comparing the revision at `base_rev + 1` with the stop's values would not do: a `/stop` with the same `base_rev` in the same millisecond writes an identical row, and the switch would start a session although its own stop was ignored.
 3. Rev 1 of the new session, only if the learner's latest session was created at now and has no revisions yet.
 
 `POST /api/sessions` uses statements 2 and 3 without the condition on a stop.
