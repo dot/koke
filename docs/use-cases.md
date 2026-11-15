@@ -55,7 +55,7 @@ A session belongs to the day it started, even if it ran past midnight.
 
 ### L8. Fix a record
 
-The learner opens a past session and changes its start time, end time or subject, or deletes it. This is done on the iPhone. Corrections are self-reported and accepted as given; koke never asks the learner to justify or revisit them.
+The learner opens a past session and changes its start time, end time or subject, or deletes it. This is done on the iPhone. Corrections are self-reported and accepted as given; koke never asks the learner to justify or revisit them. A session's start time can be moved at most 7 days from when the session was recorded.
 
 ### L9. Manage subjects
 
