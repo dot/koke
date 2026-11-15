@@ -91,4 +91,3 @@ These are constants in the code, not settings. Changing them means a deploy.
 ## Open decisions
 
 - How learners are identified and authenticated (passkey, magic link, Sign in with Apple/Google, or invitation link plus device token), and how the same account is used on both the iPhone and a PC browser
-- Hosting platform for the server

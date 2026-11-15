@@ -13,7 +13,7 @@ It is not for showing anyone, and it is not a time manager. It is a patch of gre
 ## How it is built
 
 - **Client**: a PWA added to the iPhone home screen. One screen that asks "start?" or "were you still going?" depending on the state it finds when opened
-- **Server**: holds the records and serves the heatmap. Also sends a scheduled "still studying?" push notification to catch sessions you forgot to end. The hosting platform is not decided yet
+- **Server**: holds the records and serves the heatmap. Also sends a scheduled "still studying?" push notification to catch sessions you forgot to end. It runs on Cloudflare Workers with D1 ([ADR 1](docs/adr/0001-hosting-platform.md))
 
 Setting it up on a phone takes three actions: open the link, add to home screen, allow notifications. Shortcuts, NFC tags and other automation are optional add-ons, never a requirement.
 
