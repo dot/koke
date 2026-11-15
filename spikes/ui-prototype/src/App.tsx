@@ -46,7 +46,7 @@ export default function App() {
   const running = sessions.find((s) => s.end === null) ?? null
 
   const start = (subjectId: number | null) => {
-    setSessions((ss) => [...ss, { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId, start: Date.now(), end: null }])
+    setSessions((ss) => [...ss, { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId, start: Date.now(), end: null, recorded: Date.now() }])
   }
   const stop = (end = Date.now()) => {
     setSessions((ss) => ss.map((s) => (s.end === null ? { ...s, end: Math.max(end, s.start) } : s)))
@@ -59,7 +59,7 @@ export default function App() {
     const t = Date.now()
     setSessions((ss) => [
       ...ss.map((s) => (s.end === null ? { ...s, end: t } : s)),
-      { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId, start: t, end: null },
+      { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId, start: t, end: null, recorded: t },
     ])
   }
 
@@ -68,7 +68,7 @@ export default function App() {
     setMenuOpen(false)
     if (!running) {
       const t = Date.now() - 40 * 60_000
-      setSessions((ss) => [...ss, { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId: 1, start: t, end: null }])
+      setSessions((ss) => [...ss, { id: Math.max(0, ...ss.map((s) => s.id)) + 1, subjectId: 1, start: t, end: null, recorded: t }])
     }
     setTab('study')
     setAwayMinutes(25)

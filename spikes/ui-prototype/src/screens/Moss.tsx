@@ -189,7 +189,16 @@ function Year(props: { days: Map<string, number>; from: number; today: number; o
     <div className="flex flex-col gap-2">
       <div ref={ref} className="-mx-1">
         {width > 0 && (
-          <CalendarHeatmap data={data} weekStart={1} locale={ja} blockSize={block} blockMargin={margin} blockRadius={1} fontSize={10}>
+          <CalendarHeatmap
+            data={data}
+            weekStart={1}
+            locale={ja}
+            blockSize={block}
+            blockMargin={margin}
+            blockRadius={1}
+            fontSize={10}
+            className="p-0"
+          >
             <CalendarHeatmapBody hideYearLabels hideWeekdayLabels className="py-1">
               {({ activity, dayIndex, weekIndex }) => (
                 <CalendarHeatmapBlock
@@ -282,7 +291,8 @@ function Month(props: {
           )}
         </span>
         <span className="text-muted-foreground">
-          計 <span className="text-foreground">{formatMinutes(total)}</span>
+          {first < from && `${new Date(from).getMonth() + 1}/${new Date(from).getDate()} から `}計{' '}
+          <span className="text-foreground">{formatMinutes(total)}</span>
         </span>
       </div>
     </div>
@@ -331,7 +341,7 @@ function Week(props: {
         ))}
       </div>
       <div className="flex justify-end text-sm text-muted-foreground">
-        計 <span className="ml-1 text-foreground">{formatMinutes(total)}</span>
+        {monday < from && `${md(from)} から `}計 <span className="ml-1 text-foreground">{formatMinutes(total)}</span>
       </div>
     </div>
   )

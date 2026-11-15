@@ -2,7 +2,8 @@
 
 // parentId groups subjects one level deep (L9); a parent never has a parent itself.
 export type Subject = { id: number; name: string; hidden: boolean; parentId: number | null }
-export type Session = { id: number; subjectId: number | null; start: number; end: number | null }
+// recorded is when the session was created; it never changes and bounds how far L8 may move the start.
+export type Session = { id: number; subjectId: number | null; start: number; end: number | null; recorded: number }
 
 const MIN = 60_000
 const DAY = 24 * 60 * MIN
@@ -61,7 +62,7 @@ export function fakeSessions(now: number): Session[] {
     for (let s = 0; s < n; s++) {
       const len = (15 + Math.floor(rand() * 75)) * MIN
       const subjectId = rand() < 0.1 ? null : 1 + Math.floor(rand() * 10)
-      out.push({ id: id++, subjectId, start: t, end: t + len })
+      out.push({ id: id++, subjectId, start: t, end: t + len, recorded: t })
       t += len + (5 + Math.floor(rand() * 30)) * MIN
     }
   }

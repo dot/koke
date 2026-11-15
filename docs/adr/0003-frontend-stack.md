@@ -30,13 +30,15 @@ A clickable prototype in `spikes/ui-prototype/` (fake data, no API) was built wi
 
 ### Alternatives considered
 
-- **Preact or plain HTML with a hand-written SVG heatmap.** Smaller, but every sheet, dialog, select and OTP input would be written and tuned for iOS by hand. The size saving does not matter for a home-screen app used daily by a few learners.
+- **Preact with `preact/compat`.** It can run React components, so the same shadcn/Base UI components might work at a smaller size. Whether Base UI behaves the same under it on iOS was not tested. The size saving does not matter enough for a home-screen app used daily by a few learners to take on that check.
+- **Plain HTML with a hand-written SVG heatmap.** Smallest, but every sheet, dialog, select and OTP input would be written and tuned for iOS by hand.
 - **Tremor.** No calendar heatmap, and `@tremor/react` supports React 18 only.
 - **Other heatmap components** (goodui, `@thilakbhat/heatmap-ui`). The first was a fallback that was not needed; the second was too new to depend on.
 
 ## Consequences
 
 - Copied components (shadcn, the heatmap) are ours to maintain. Upstream fixes do not arrive by themselves; updating means re-running the CLI and re-applying the heatmap change.
+- The heatmap wraps itself in padding by default. The year view turns it off, because the cell size is computed from the screen width and the padding would push the right end out of view.
 - The heatmap thins month labels, so the rightmost month label can be missing in the year view. The year view is an overview, so this is accepted.
 - date-fns is pulled in only by the heatmap. If size becomes a concern, the year view is the part to rewrite by hand.
 - The screen behaviour is specified in `docs/screens.md`; #4, #5, #7 and #9 build against it.

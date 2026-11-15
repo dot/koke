@@ -118,12 +118,14 @@ function EditSession(props: {
 
   const startT = new Date(start).getTime()
   const endT = end ? new Date(end).getTime() : null
-  // Rules from docs/api.md: no future times, end after start, start within 7 days of the original.
+  // Rules from docs/api.md: no future times, end after start, start within 7 days of when it was recorded,
+  // and an ended session stays ended.
   const error =
     Number.isNaN(startT) ? '開始時刻を入れてください'
+    : session.end !== null && endT === null ? '終了時刻を入れてください'
     : startT > props.now || (endT !== null && endT > props.now) ? '未来の時刻にはできません'
     : endT !== null && endT < startT ? '終了が開始より前になっています'
-    : Math.abs(startT - session.start) > 7 * DAY ? '開始は記録した日から 7 日以内でしか動かせません'
+    : Math.abs(startT - session.recorded) > 7 * DAY ? '開始は記録した日から 7 日以内でしか動かせません'
     : null
 
   const close = () => {
