@@ -12,17 +12,17 @@ Can the server reach a learner with a push notification when koke is installed a
 
 Yes. Every push sent while the phone was online arrived within 2 seconds, in every app state tried, including after 20 minutes locked. Tapping the notification opened koke and our page code ran every time.
 
-| # | Situation | Arrived | Lag (send → service worker) | Tap opened koke |
+| # | Situation | Arrived | Lag: server clock / phone clock | Tap opened koke |
 |---|---|---|---|---|
-| 1 | App in the foreground | yes | 0.8 s | – |
-| 2 | App in the background | yes | 1.1 s | yes |
-| 3 | Phone locked (30 s) | yes, screen woke | 1.0 s | yes |
-| 4 | App swiped away | yes | 1.3 s | yes |
+| 1 | App in the foreground | yes | 0.4 s / 0.8 s | – |
+| 2 | App in the background | yes | 0.9 s / 1.1 s | yes |
+| 3 | Phone locked (30 s) | yes, screen woke | 0.9 s / 1.0 s | yes |
+| 4 | App swiped away | yes | 1.0 s / 1.3 s | yes |
 | 5a | Offline, `TTL: 60`, back online after 17 min | no (expired) | – | – |
 | 5b | Offline, `TTL: 3600`, back online after 17 min | yes, on reconnect | 17 min | – |
-| 6 | Phone locked for 20 min | yes, screen woke | 1.8 s | – |
+| 6 | Phone locked for 20 min | yes, screen woke | 1.8 s / 1.8 s | – |
 
-Lag is measured from the server's send time to the service worker's `push` handler, using the phone's clock.
+Two lag figures are given. *Server clock*: from the server logging the send (after the push service accepted it) to the server receiving the service worker's acknowledgement, so it includes the acknowledgement's upload. *Phone clock*: from the send time in the payload to the service worker's `push` handler, which compares two clocks that were not synchronised. Both stay under 2 seconds; neither is precise below a few hundred milliseconds.
 
 ## Observations that matter for #6
 
