@@ -1,19 +1,42 @@
 // Fake data for the prototype. Nothing here talks to a server.
 
-export type Subject = { id: number; name: string; hidden: boolean }
+// parentId groups subjects one level deep (L9); a parent never has a parent itself.
+export type Subject = { id: number; name: string; hidden: boolean; parentId: number | null }
 export type Session = { id: number; subjectId: number | null; start: number; end: number | null }
 
 const MIN = 60_000
 const DAY = 24 * 60 * MIN
 
 export const initialSubjects: Subject[] = [
-  { id: 1, name: '数学', hidden: false },
-  { id: 2, name: '英語', hidden: false },
-  { id: 3, name: '国語', hidden: false },
-  { id: 4, name: '理科', hidden: false },
-  { id: 5, name: '社会', hidden: false },
-  { id: 6, name: '漢検', hidden: true },
+  { id: 1, name: '数学', hidden: false, parentId: null },
+  { id: 7, name: '数I', hidden: false, parentId: 1 },
+  { id: 8, name: '数II', hidden: false, parentId: 1 },
+  { id: 2, name: '英語', hidden: false, parentId: null },
+  { id: 3, name: '国語', hidden: false, parentId: null },
+  { id: 4, name: '理科', hidden: false, parentId: null },
+  { id: 9, name: '物理', hidden: false, parentId: 4 },
+  { id: 10, name: '化学', hidden: false, parentId: 4 },
+  { id: 5, name: '社会', hidden: false, parentId: null },
+  { id: 6, name: '漢検', hidden: true, parentId: null },
 ]
+
+// Parents in list order, each followed by its children in list order.
+export function tree(subjects: Subject[]): { parent: Subject; children: Subject[] }[] {
+  return subjects
+    .filter((s) => s.parentId === null)
+    .map((parent) => ({ parent, children: subjects.filter((s) => s.parentId === parent.id) }))
+}
+
+export function subjectName(subjects: Subject[], id: number | null): string {
+  return subjects.find((s) => s.id === id)?.name ?? '教科なし'
+}
+
+// "数学 › 数I" where the short name alone could be ambiguous out of context.
+export function subjectPath(subjects: Subject[], id: number): string {
+  const s = subjects.find((x) => x.id === id)
+  const parent = subjects.find((x) => x.id === s?.parentId)
+  return parent ? `${parent.name} › ${s?.name}` : (s?.name ?? '')
+}
 
 export function startOfDay(t: number): number {
   const d = new Date(t)
@@ -37,7 +60,7 @@ export function fakeSessions(now: number): Session[] {
     let t = day + (16 * 60 + Math.floor(rand() * 90)) * MIN
     for (let s = 0; s < n; s++) {
       const len = (15 + Math.floor(rand() * 75)) * MIN
-      const subjectId = rand() < 0.1 ? null : 1 + Math.floor(rand() * 6)
+      const subjectId = rand() < 0.1 ? null : 1 + Math.floor(rand() * 10)
       out.push({ id: id++, subjectId, start: t, end: t + len })
       t += len + (5 + Math.floor(rand() * 30)) * MIN
     }
@@ -74,14 +97,23 @@ export function formatDay(t: number): string {
 
 export type Filter = 'all' | number
 
+// A parent filter counts its children; uncategorized sessions only count under 'all' (L7).
+function matcher(subjects: Subject[], filter: Filter) {
+  return (s: Session) =>
+    filter === 'all' ||
+    s.subjectId === filter ||
+    subjects.find((x) => x.id === s.subjectId)?.parentId === filter
+}
+
 // What /api/summary would return: minutes per day for the last 53 weeks, totals and the streak.
-export function summarize(sessions: Session[], filter: Filter, now: number) {
+export function summarize(sessions: Session[], subjects: Subject[], filter: Filter, now: number) {
+  const match = matcher(subjects, filter)
   const today = startOfDay(now)
   const from = today - 370 * DAY
   const days = new Map<string, number>()
   for (const s of sessions) {
     if (s.start < from) continue
-    if (filter !== 'all' && s.subjectId !== filter) continue
+    if (!match(s)) continue
     const k = dateKey(s.start)
     days.set(k, (days.get(k) ?? 0) + minutesOf(s, now))
   }
@@ -91,7 +123,7 @@ export function summarize(sessions: Session[], filter: Filter, now: number) {
   let week = 0
   let month = 0
   for (const s of sessions) {
-    if (filter !== 'all' && s.subjectId !== filter) continue
+    if (!match(s)) continue
     if (s.start >= monday) week += minutesOf(s, now)
     if (s.start >= firstOfMonth.getTime()) month += minutesOf(s, now)
   }

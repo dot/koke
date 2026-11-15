@@ -4,6 +4,6 @@ A clickable prototype of koke's screens for L2–L9, with fake data and no API. 
 
 - `npm run dev` serves it on the local network.
 - `npm run build && npx wrangler deploy` publishes it as the temporary Worker `koke-ui-prototype`.
-- The "試作" button opens a menu that reproduces situations that are hard to trigger by hand: coming back after an absence (L5), opening from the "still studying?" notification (L6), viewing on a PC (L7), and the two ways of fitting 53 weeks on a phone.
+- The "試作" button opens a menu that reproduces situations that are hard to trigger by hand: coming back after an absence (L5), opening from the "still studying?" notification (L6), and viewing on a PC (L7).
 
 `src/components/heatmap/calendar-heatmap.tsx` is copied from rutopio/shadcn-heatmap (MIT) through the shadcn CLI, with one change: the continuous layout draws one strip instead of one row per calendar year.

@@ -15,7 +15,18 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { dateKey, formatClock, formatDay, formatMinutes, minutesOf, startOfDay, type Session, type Subject } from '@/data'
+import {
+  dateKey,
+  formatClock,
+  formatDay,
+  formatMinutes,
+  minutesOf,
+  startOfDay,
+  subjectName,
+  tree,
+  type Session,
+  type Subject,
+} from '@/data'
 
 type Props = {
   sessions: Session[]
@@ -35,7 +46,6 @@ const toInput = (t: number) => {
 export function Log({ sessions, subjects, now, onChange }: Props) {
   const [days, setDays] = useState(14)
   const [editing, setEditing] = useState<Session | null>(null)
-  const nameOf = (id: number | null) => subjects.find((s) => s.id === id)?.name ?? '未分類'
 
   const from = startOfDay(now) - (days - 1) * DAY
   const groups = new Map<number, Session[]>()
@@ -61,7 +71,7 @@ export function Log({ sessions, subjects, now, onChange }: Props) {
                 onClick={() => setEditing(s)}
                 className="flex items-center gap-3 px-3 py-3 text-left active:bg-secondary"
               >
-                <span className="w-14 shrink-0 font-medium">{nameOf(s.subjectId)}</span>
+                <span className="w-16 shrink-0 truncate font-medium">{subjectName(subjects, s.subjectId)}</span>
                 <span className="flex-1 text-sm text-muted-foreground tabular-nums">
                   {formatClock(s.start)} – {s.end ? formatClock(s.end) : '計測中'}
                 </span>
@@ -121,8 +131,11 @@ function EditSession(props: {
     setTimeout(props.onClose, 300)
   }
   const items = [
-    ...props.subjects.map((s) => ({ value: String(s.id), label: s.name })),
-    { value: 'none', label: '未分類' },
+    ...tree(props.subjects).flatMap(({ parent, children }) => [
+      { value: String(parent.id), label: parent.name },
+      ...children.map((c) => ({ value: String(c.id), label: `${parent.name} › ${c.name}` })),
+    ]),
+    { value: 'none', label: '教科なし' },
   ]
 
   return (

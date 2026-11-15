@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -10,8 +11,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
-import { formatClock, type Session, type Subject } from '@/data'
+import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { formatClock, subjectPath, type Session, type Subject } from '@/data'
+import { SubjectPicker } from '@/screens/SubjectPicker'
 
 type Props = {
   subjects: Subject[]
@@ -20,17 +22,10 @@ type Props = {
   now: number
   onStart: (subjectId: number | null) => void
   onStop: () => void
-  onSwitch: (subjectId: number | null) => void
+  onSwitch: (subjectId: number) => void
+  onLabel: (subjectId: number) => void
   awayMinutes: number | null
   onAwayAnswer: (studying: boolean) => void
-}
-
-// Visible subjects, the one used last first (L2).
-function ordered(subjects: Subject[], sessions: Session[]): Subject[] {
-  const visible = subjects.filter((s) => !s.hidden)
-  const last = [...sessions].sort((a, b) => b.start - a.start).find((s) => s.subjectId !== null)
-  const i = visible.findIndex((s) => s.id === last?.subjectId)
-  return i <= 0 ? visible : [visible[i], ...visible.slice(0, i), ...visible.slice(i + 1)]
 }
 
 function elapsed(ms: number): string {
@@ -43,16 +38,28 @@ function elapsed(ms: number): string {
 
 export function Study(props: Props) {
   const { subjects, sessions, running, now } = props
-  const [switching, setSwitching] = useState(false)
-  const list = ordered(subjects, sessions)
-  const nameOf = (id: number | null) => subjects.find((s) => s.id === id)?.name ?? '未分類'
+  const [picking, setPicking] = useState(false)
+  // L3: an uncategorized session gets its subject for the whole run; a categorized one is split at "now".
+  const labeling = running?.subjectId === null
 
   return (
     <div className="flex min-h-full flex-col">
       {running ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-8 py-10">
           <div className="flex flex-col items-center gap-2">
-            <span className="rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">{nameOf(running.subjectId)}</span>
+            {labeling ? (
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="flex items-center gap-1 rounded-full border border-dashed px-3 py-1 text-sm text-muted-foreground"
+              >
+                <Plus className="size-3.5" /> 教科
+              </button>
+            ) : (
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">
+                {subjectPath(subjects, running.subjectId!)}
+              </span>
+            )}
             <span className="text-6xl font-extralight tabular-nums tracking-tight">{elapsed(now - running.start)}</span>
             <span className="text-sm text-muted-foreground">{formatClock(running.start)} から</span>
           </div>
@@ -60,62 +67,46 @@ export function Study(props: Props) {
             <Button size="lg" className="h-14 text-base" onClick={props.onStop}>
               終わる
             </Button>
-            <Button size="lg" variant="outline" className="h-12" onClick={() => setSwitching(true)}>
-              教科を切り替える
-            </Button>
+            {!labeling && (
+              <Button size="lg" variant="outline" className="h-12" onClick={() => setPicking(true)}>
+                教科を切り替える
+              </Button>
+            )}
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-4 py-6">
-          <h1 className="text-xl font-medium">何を勉強する？</h1>
-          <div className="grid grid-cols-2 gap-3">
-            {list.map((s) => (
-              <Button key={s.id} size="lg" variant="secondary" className="h-20 text-lg" onClick={() => props.onStart(s.id)}>
-                {s.name}
-              </Button>
-            ))}
-          </div>
-          <Button size="lg" variant="outline" className="h-12" onClick={() => props.onStart(null)}>
-            決めてない
+        <div className="flex flex-col gap-8 py-6">
+          <Button size="lg" className="h-28 rounded-2xl text-2xl" onClick={() => props.onStart(null)}>
+            始める
           </Button>
+          <div className="flex flex-col gap-3">
+            <span className="text-sm text-muted-foreground">教科を決めて始める</span>
+            <SubjectPicker subjects={subjects} sessions={sessions} onPick={(id) => props.onStart(id)} />
+          </div>
         </div>
       )}
 
-      <Drawer open={switching} onOpenChange={setSwitching}>
+      <Drawer open={picking} onOpenChange={setPicking}>
         <DrawerContent>
           <DrawerHeader>
-            <DrawerTitle>何に切り替える？</DrawerTitle>
+            <DrawerTitle>{labeling ? '何を勉強してる？' : '何に切り替える？'}</DrawerTitle>
+            <DrawerDescription>
+              {labeling && running
+                ? `${formatClock(running.start)} から、この教科として記録します`
+                : 'いまの記録はここで区切り、新しく始めます'}
+            </DrawerDescription>
           </DrawerHeader>
-          <div className="grid grid-cols-2 gap-3 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            {list
-              .filter((s) => s.id !== running?.subjectId)
-              .map((s) => (
-                <Button
-                  key={s.id}
-                  size="lg"
-                  variant="secondary"
-                  className="h-16 text-base"
-                  onClick={() => {
-                    props.onSwitch(s.id)
-                    setSwitching(false)
-                  }}
-                >
-                  {s.name}
-                </Button>
-              ))}
-            {running?.subjectId !== null && (
-              <Button
-                size="lg"
-                variant="outline"
-                className="col-span-2 h-12"
-                onClick={() => {
-                  props.onSwitch(null)
-                  setSwitching(false)
-                }}
-              >
-                決めてない
-              </Button>
-            )}
+          <div className="px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <SubjectPicker
+              subjects={subjects}
+              sessions={sessions}
+              exclude={running?.subjectId}
+              onPick={(id) => {
+                if (labeling) props.onLabel(id)
+                else props.onSwitch(id)
+                setPicking(false)
+              }}
+            />
           </div>
         </DrawerContent>
       </Drawer>

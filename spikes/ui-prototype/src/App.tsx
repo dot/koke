@@ -6,7 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { fakeSessions, initialSubjects, type Session, type Subject } from '@/data'
 import { Study } from '@/screens/Study'
-import { Moss, type MossLayout } from '@/screens/Moss'
+import { Moss } from '@/screens/Moss'
 import { Log } from '@/screens/Log'
 import { Subjects } from '@/screens/Subjects'
 import { PairPc } from '@/screens/Pairing'
@@ -28,7 +28,6 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('study')
   const [device, setDevice] = useState<Device>('phone')
   const [paired, setPaired] = useState(false)
-  const [mossLayout, setMossLayout] = useState<MossLayout>('fit')
   const [awayMinutes, setAwayMinutes] = useState<number | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -52,7 +51,11 @@ export default function App() {
   const stop = (end = Date.now()) => {
     setSessions((ss) => ss.map((s) => (s.end === null ? { ...s, end: Math.max(end, s.start) } : s)))
   }
-  const switchTo = (subjectId: number | null) => {
+  // L3: picking a subject for an uncategorized session relabels it from its start; nothing is split.
+  const label = (subjectId: number) => {
+    setSessions((ss) => ss.map((s) => (s.end === null ? { ...s, subjectId } : s)))
+  }
+  const switchTo = (subjectId: number) => {
     const t = Date.now()
     setSessions((ss) => [
       ...ss.map((s) => (s.end === null ? { ...s, end: t } : s)),
@@ -93,7 +96,7 @@ export default function App() {
         {isPc && !paired ? (
           <PairPc onPaired={() => setPaired(true)} />
         ) : isPc ? (
-          <Moss sessions={sessions} subjects={subjects} now={now} layout={mossLayout} readOnly />
+          <Moss sessions={sessions} subjects={subjects} now={now} readOnly />
         ) : tab === 'study' ? (
           <Study
             subjects={subjects}
@@ -103,6 +106,7 @@ export default function App() {
             onStart={start}
             onStop={() => stop()}
             onSwitch={switchTo}
+            onLabel={label}
             awayMinutes={awayMinutes}
             onAwayAnswer={(studying) => {
               if (!studying) stop(Date.now() - (awayMinutes ?? 0) * 60_000)
@@ -110,7 +114,7 @@ export default function App() {
             }}
           />
         ) : tab === 'moss' ? (
-          <Moss sessions={sessions} subjects={subjects} now={now} layout={mossLayout} />
+          <Moss sessions={sessions} subjects={subjects} now={now} />
         ) : tab === 'log' ? (
           <Log sessions={sessions} subjects={subjects} now={now} onChange={setSessions} />
         ) : (
@@ -169,17 +173,6 @@ export default function App() {
               >
                 <ToggleGroupItem value="phone">iPhone</ToggleGroupItem>
                 <ToggleGroupItem value="pc">PC</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-            <div className="flex flex-col gap-2">
-              <span className="text-sm text-muted-foreground">苔の幅（53 週）</span>
-              <ToggleGroup
-                variant="outline"
-                value={[mossLayout]}
-                onValueChange={(v) => v[0] && setMossLayout(v[0] as MossLayout)}
-              >
-                <ToggleGroupItem value="fit">画面に収める</ToggleGroupItem>
-                <ToggleGroupItem value="scroll">横にスクロール</ToggleGroupItem>
               </ToggleGroup>
             </div>
             <Button
