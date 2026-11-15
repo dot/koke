@@ -1,0 +1,8 @@
+{
+  "name": "koke-storage-spike",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}
