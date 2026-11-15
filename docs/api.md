@@ -9,7 +9,7 @@ All times are UTC epoch milliseconds. Days are JST calendar days, worked out in 
 | Table | Changes | Purpose |
 |---|---|---|
 | `users` | insert; `display_name` may change | One row per learner. Every other row hangs off `user_id`. |
-| `subjects` | edited in place | A learner's subject list (L9): `name`, `position`, `hidden`. Hidden subjects keep their sessions. |
+| `subjects` | edited in place | A learner's subject list (L9): `name`, `position`, `hidden`, and `parent_id` for a subject grouped under another. Hidden subjects keep their sessions. |
 | `sessions` | **insert only** | Fixes a session's owner and the order sessions were created in. Always inserted in the same D1 batch as the session's rev 1. |
 | `session_revisions` | **insert only** | The history of each session (below). |
 | `push_subscriptions` | insert and delete | Where to send "still studying?" (L6). One per subscribing device. |
@@ -25,6 +25,7 @@ A session is a stack of rows in `session_revisions` sharing a `session_id`. Each
 | Start (L2) | rev 1, `ended_at` null | `app` |
 | Phone goes away (L5) | `away_at` = when the page was hidden | `away` |
 | Stop (L4), or "not studying" after an absence (L5) | `ended_at` = now, or the `away_at` the learner confirmed | `app` |
+| Pick a subject for an uncategorized running session (L3) | `subject_id` set; nothing else changes, so it applies from the start | `app` |
 | Switch subject (L3) | stop this session, start a new one | `app` |
 | "Still studying?" sent (L6) | `prompted_at` = send time | `prompt` |
 | Notification tapped (L6) | `prompted_at` cleared | `extend` |
@@ -42,6 +43,7 @@ A session is **running** when its current revision has `ended_at` null and `dele
 - **Only a learner's latest session can be running.** A `sessions` row can be inserted only when the learner's latest session has revisions and is ended or deleted; rev 1 can be written only to the learner's latest session; ended sessions stay ended. So the running session, if any, is always the learner's highest `session_id`. The L6 job relies on this (see "Query cost"). A `sessions` row without rev 1 would block the learner's next start, which is why the two are always inserted in one batch.
 - `INSERT OR REPLACE` cannot rewrite a `sessions` row.
 - `ended_at` ≥ `started_at`.
+- Subjects nest one level deep: a parent never has a parent, a subject with children never gets one, and a parent belongs to the same learner. A subject's id and owner never change, and `INSERT OR REPLACE` cannot rewrite one.
 
 ### Rules the API enforces
 
@@ -52,7 +54,7 @@ A session is **running** when its current revision has `ended_at` null and `dele
 ## Requests and authorisation
 
 - Every request is identified by the device cookie (ADR 2): cookie → device → `user_id`. The client never sends a `user_id`.
-- Any `session_id` or `subject_id` in a request must belong to that `user_id`. Otherwise the answer is `404`, the same as for an id that does not exist.
+- Any `session_id`, `subject_id` or `parent_id` in a request must belong to that `user_id`. Otherwise the answer is `404`, the same as for an id that does not exist.
 - `pc` devices are read-only. Any request that changes state returns `403`.
 - Requests that change state must carry an `Origin` header equal to koke's own origin; otherwise `403`.
 - Bodies are JSON. `away` also accepts `text/plain` holding JSON, because `navigator.sendBeacon` cannot set a JSON content type without a preflight.
@@ -61,9 +63,11 @@ A session is **running** when its current revision has `ended_at` null and `dele
 A session in a response looks like:
 
 ```json
-{ "session_id": 812, "rev": 3, "subject_id": 4, "started_at": 1794650000000,
-  "ended_at": null, "away_at": 1794651200000, "prompted_at": null }
+{ "session_id": 812, "rev": 3, "subject_id": 4, "recorded_at": 1794650000000,
+  "started_at": 1794650000000, "ended_at": null, "away_at": 1794651200000, "prompted_at": null }
 ```
+
+`recorded_at` is `sessions.created_at` and never changes. The L8 editor uses it to show the 7-day limit on moving the start before saving.
 
 Write requests on an existing session send `base_rev`, the `rev` the client last saw, and get back:
 
@@ -77,18 +81,19 @@ Write requests on an existing session send `base_rev`, the `rev` the client last
 
 ### Screen state
 
-`GET /api/state` → `{ "running": <session> | null, "subjects": [...] }`
+`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null }`
 
-The PWA calls this on open to pick its screen (#4). `subjects` are the visible ones, last used first, then in the learner's order.
+The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out.
 
 ### Sessions
 
 | Request | Body | Notes |
 |---|---|---|
-| `POST /api/sessions` | `{ "subject_id": 4 }` or `{}` for "not decided" | L2. Inserts the `sessions` row and rev 1 in one D1 batch. `409` if a session is running (the schema refuses the `sessions` row). Returns `{ "session": … }`. |
+| `POST /api/sessions` | `{}` for "start", or `{ "subject_id": 4 }` | L2. Inserts the `sessions` row and rev 1 in one D1 batch. `409` if a session is running (the schema refuses the `sessions` row). Returns `{ "session": … }`. |
 | `POST /api/sessions/:id/stop` | `{ "base_rev": 3, "ended_at"?: … }` | L4. `ended_at` defaults to now. For "not studying" after an absence (L5), it is the `away_at` the client recorded. |
 | `POST /api/sessions/:id/away` | `{ "base_rev": 3, "away_at": … }` | L5, sent with `sendBeacon` when the page is hidden. Never ends the session. |
 | `POST /api/sessions/:id/extend` | `{ "base_rev": 4 }` | L6, sent when the learner opens koke from the notification. Clears `prompted_at`. |
+| `POST /api/sessions/:id/subject` | `{ "base_rev": 3, "subject_id": 5 }` | L3, picking a subject for an uncategorized running session. A stale `base_rev` is checked first and answers `applied: false` like any other write, so a double-fired request is not a conflict. Only when `base_rev` is the head and that head has ended or already has a subject is the answer `409`; those go through switch or adjust. |
 | `POST /api/sessions/:id/switch` | `{ "base_rev": 3, "subject_id": 5 }` | L3. Stops this session and starts a new one in one D1 batch (below). Returns `{ "applied": …, "session": <new, or the current head if not applied> }`. |
 | `POST /api/sessions/:id/adjust` | `{ "base_rev": 6, "started_at"?, "ended_at"?, "subject_id"?, "deleted"? }` | L8. Any subset. A running session can change its start or subject. Setting `ended_at` on it stops it. Cannot reopen. |
 | `GET /api/sessions?from=&to=` | – | L8 list: current heads of non-deleted sessions started in the range, newest first. |
@@ -96,7 +101,7 @@ The PWA calls this on open to pick its screen (#4). `subjects` are the visible o
 The switch batch has three statements. The second and third are `INSERT … SELECT … WHERE`, so they insert nothing when the stop was ignored:
 
 1. The stop revision at `base_rev + 1`, with `ended_at` and `created_at` = now.
-2. The new `sessions` row, only if the revision at `base_rev + 1` is that stop (same `source`, `ended_at` and `created_at`).
+2. The new `sessions` row, only if statement 1 was applied: `WHERE changes() = 1`. An ignored insert reports 0 changes. Comparing the revision at `base_rev + 1` with the stop's values would not do: a `/stop` with the same `base_rev` in the same millisecond writes an identical row, and the switch would start a session although its own stop was ignored.
 3. Rev 1 of the new session, only if the learner's latest session was created at now and has no revisions yet.
 
 `POST /api/sessions` uses statements 2 and 3 without the condition on a stop.
@@ -111,7 +116,8 @@ The switch batch has three statements. The second and third are `INSERT … SELE
 ```
 
 - `days` covers the last 53 weeks: from JST 00:00 of the day 370 days before today, through today. Days with no study are left out.
-- `subject=all` includes uncategorised sessions. A single subject never does (L7).
+- `subject=all` includes uncategorised sessions. A subject never does (L7).
+- A parent subject counts itself and its children; a child counts only itself.
 - Weeks start on Monday (JST). `streak_days` counts back from today; if nothing has been studied yet today, it counts back from yesterday, so the streak does not break until the day is over. If every day back to the start of the 53 weeks was studied, the API reads the 53 weeks before that with the same query, and so on until it finds a day without study. Only a streak longer than a year costs a second read.
 - Hidden subjects still count under `all`.
 
@@ -120,9 +126,9 @@ The switch batch has three statements. The second and third are `INSERT … SELE
 | Request | Body |
 |---|---|
 | `GET /api/subjects` | – (all, including hidden, in order) |
-| `POST /api/subjects` | `{ "name": "math" }` → appended at the end |
+| `POST /api/subjects` | `{ "name": "math", "parent_id"?: 3 }` → appended at the end |
 | `PATCH /api/subjects/:id` | `{ "name"?, "hidden"? }` |
-| `PUT /api/subjects/order` | `{ "subject_ids": [3, 1, 2] }` (must list every subject of the learner) |
+| `PUT /api/subjects/order` | `{ "subject_ids": [3, 1, 2] }` (must list every subject of the learner; children are shown in this order under their parent) |
 
 ### Push (L1, L6)
 
@@ -180,11 +186,12 @@ SELECT date((h.started_at + 9 * 3600000) / 1000, 'unixepoch') AS day,
        SUM(COALESCE(h.ended_at, ?now) - h.started_at) / 60000 AS minutes
 FROM recent JOIN session_revisions h ON h.session_id = recent.session_id AND h.rev = recent.rev
 WHERE h.deleted = 0 AND h.started_at >= ?from
-  AND (?subject IS NULL OR h.subject_id = ?subject)
+  AND (?subject IS NULL OR h.subject_id IN (
+        SELECT subject_id FROM subjects WHERE subject_id = ?subject OR parent_id = ?subject))
 GROUP BY day ORDER BY day;
 ```
 
-On the 3-year history its result matched a full scan of `sessions_current` for every day in the window.
+On the 3-year history its result matched a full scan of `sessions_current` for every day in the window. Filtering by a parent adds two index lookups on `subjects` and was checked the same way.
 
 Avoid `sessions_current` in the API: it scans every revision.
 
