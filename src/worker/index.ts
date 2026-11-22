@@ -53,7 +53,9 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
     return signedIn(device, json({ read_only: device.kind === 'pc', ...(await screenState(env.DB, device.user_id)) }))
   }
   if (path === '/api/sessions' && req.method === 'POST') {
-    const subjectId = (await readJson(req))?.subject_id ?? null
+    const body = await readJson(req)
+    if (!body) return signedIn(device, error('bad_request'))
+    const subjectId = body.subject_id ?? null
     if (subjectId !== null && !Number.isSafeInteger(subjectId)) return signedIn(device, error('bad_request'))
     return signedIn(device, writeResponse(await start(env.DB, device.user_id, subjectId as number | null, now)))
   }

@@ -60,6 +60,12 @@ describe('start (L2)', () => {
     const theirs = await addSubject(other.userId, 'theirs')
     expect((await start(phone.cookie, { subject_id: theirs })).status).toBe(404)
   })
+
+  it('refuses a body that is not a JSON object instead of starting a session', async () => {
+    const phone = await newPhone()
+    expect((await start(phone.cookie, 'start')).status).toBe(400)
+    expect((await call('/api/state', { cookie: phone.cookie }).then((r) => r.json()) as { running: unknown }).running).toBeNull()
+  })
 })
 
 describe('stop (L4)', () => {
@@ -201,6 +207,7 @@ describe('switch (L3)', () => {
     // Either the stop won (one session, nothing running) or the switch won (two sessions, one running).
     expect(n === 1 ? state.running : state.running?.subject_id).toBe(n === 1 ? null : english)
   })
+
 })
 
 describe('screen state (#4)', () => {
