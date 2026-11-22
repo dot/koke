@@ -83,7 +83,7 @@ Write requests on an existing session send `base_rev`, the `rev` the client last
 { "applied": true, "session": { … current head … } }
 ```
 
-`applied: false` means another request got there first; the client shows the returned head and moves on.
+`applied: false` means another request got there first; the client shows the returned head and moves on. The one exception is "not studying" after an absence (L5): it is the learner's answer, not a tap that may have fired twice, so the client sends the stop once more on the returned head if that session is still running.
 
 ## Endpoints
 
@@ -99,23 +99,27 @@ These follow ADR 2. The two ways in work without a cookie; both still check `Ori
 | `POST /api/pairing-codes` | `{}` | Phone only. `{ "code": "482913", "expires_at": … }`. Spends any code this phone showed before. While pairing is paused, `429`. |
 | `POST /api/pair` | `{ "code": "482913" }` | From a PC without a cookie. If the code is in force and its phone is valid, issues a `pc` device paired from that phone, spends the code and sets the cookie. A wrong, used or expired code is `404` and counts as a wrong attempt. The fifth wrong attempt across koke spends every code in force and pauses pairing for 15 minutes; during the pause every attempt is `429`. |
 
-`/api/handoff` and `/api/pair` answer `{ "read_only": … }`, like `GET /api/state`.
+`/api/handoff` and `/api/pair` answer only `{ "read_only": … }`; the PWA then reads `GET /api/state`.
 
 The launch URL `/?handoff=` is served as a static file and never reaches the Worker, so it cannot change state. Its `Referrer-Policy` and `Cache-Control` come from `public/_headers`.
 
 ### Screen state
 
-`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null }`
+`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null, "away_threshold_minutes": 30 }`
 
-Without a valid cookie it is `401`; the PWA then exchanges a `handoff` code if it has one, and otherwise asks for a new invitation (home-screen app) or shows PC pairing (browser tab). Until #4 lands it answers only `read_only`.
+Without a valid cookie it is `401`; the PWA then exchanges a `handoff` code if it has one, and otherwise asks for a new invitation (home-screen app) or shows PC pairing (browser tab).
 
-The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out.
+The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out. `last_subject_id` is looked up among the learner's last 20 sessions, which keeps the rows read bounded.
+
+`away_threshold_minutes` is how long koke must have been away before the PWA asks "were you still studying?" (L5). It is 30, a constant on the server; the PWA has none of its own, so a per-learner setting (#22) changes only the server. Each `away_at` is judged once, on the return that follows it.
+
+Writes to a session that has already ended or been deleted (stop, away, subject, switch) answer `409`, so a second stop cannot move a session's end. A stale `base_rev` is checked first and answers `applied: false` with the head, as for every write.
 
 ### Sessions
 
 | Request | Body | Notes |
 |---|---|---|
-| `POST /api/sessions` | `{}` for "start", or `{ "subject_id": 4 }` | L2. Inserts the `sessions` row and rev 1 in one D1 batch. `409` if a session is running (the schema refuses the `sessions` row). Returns `{ "session": … }`. |
+| `POST /api/sessions` | `{}` for "start", or `{ "subject_id": 4 }` | L2. Inserts the `sessions` row and rev 1 in one D1 batch. `409` if a session is running (the schema refuses the `sessions` row). Returns `{ "applied": true, "session": … }`. |
 | `POST /api/sessions/:id/stop` | `{ "base_rev": 3, "ended_at"?: … }` | L4. `ended_at` defaults to now. For "not studying" after an absence (L5), it is the `away_at` the client recorded. |
 | `POST /api/sessions/:id/away` | `{ "base_rev": 3, "away_at": … }` | L5, sent with `sendBeacon` when the page is hidden. Never ends the session. |
 | `POST /api/sessions/:id/extend` | `{ "base_rev": 4 }` | L6, sent when the learner opens koke from the notification. Clears `prompted_at`. |
@@ -168,7 +172,7 @@ Every minute, a Cron Trigger:
 2. If the latest revision of the session was created more than the fixed interval ago and `prompted_at` is null, it appends a `prompt` revision. Only if that insert was applied (`RETURNING` gives a row) does it send "still studying?", with a TTL equal to the wait. An ignored insert means the learner acted at the same moment, and nothing is sent.
 3. If `prompted_at` is older than the fixed wait, it appends a `timeout` revision ending the session at `prompted_at` (raised to `started_at` if earlier, see "Rules the API enforces").
 
-Interval, wait and absence threshold are constants in code (use cases, "Fixed in v1"). #6 picks their values.
+Interval and wait are constants in code (use cases, "Fixed in v1"). #6 picks their values.
 
 ## Query cost
 

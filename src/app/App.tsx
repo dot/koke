@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { api, type State } from './api.ts'
-import { PairPc, ShowPairingCode } from './screens/Pairing.tsx'
+import { Phone } from './Phone.tsx'
+import { PairPc } from './screens/Pairing.tsx'
 
 type Boot =
   | { kind: 'loading' }
@@ -25,8 +25,10 @@ async function boot(): Promise<Boot> {
   if (state.ok) return { kind: 'signed-in', state: state.body }
   if (handoff !== null) {
     // The server ignores the code when a valid cookie is present, so this never switches accounts.
-    const spent = await api<State>('/api/handoff', { code: handoff })
-    if (spent.ok) return { kind: 'signed-in', state: spent.body }
+    const spent = await api('/api/handoff', { code: handoff })
+    // Signing in answers only read_only; the screen needs the full state.
+    const signedIn = spent.ok ? await api<State>('/api/state') : null
+    if (signedIn?.ok) return { kind: 'signed-in', state: signedIn.body }
     return { kind: 'need-invitation', spent: true }
   }
   return standalone() ? { kind: 'need-invitation', spent: false } : { kind: 'pair' }
@@ -49,7 +51,14 @@ export default function App() {
         {view.kind === 'signed-in' && view.state.read_only && <span className="text-sm text-muted-foreground">閲覧のみ</span>}
       </header>
       {view.kind === 'need-invitation' && <NeedInvitation spent={view.spent} />}
-      {view.kind === 'pair' && <PairPc onPaired={(state) => setView({ kind: 'signed-in', state })} />}
+      {view.kind === 'pair' && (
+        <PairPc
+          onPaired={async () => {
+            const state = await api<State>('/api/state')
+            if (state.ok) setView({ kind: 'signed-in', state: state.body })
+          }}
+        />
+      )}
       {view.kind === 'signed-in' && <Home state={view.state} />}
     </div>
   )
@@ -65,17 +74,8 @@ function NeedInvitation({ spent }: { spent: boolean }) {
   )
 }
 
-// The study and moss screens arrive with #4 and #5; until then this only offers PC pairing.
+// A PC shows only the moss (L7), which arrives with #5.
 function Home({ state }: { state: State }) {
-  const [pairing, setPairing] = useState(false)
   if (state.read_only) return <p className="py-16 text-center text-sm text-muted-foreground">苔はここに表示されます。</p>
-  return (
-    <div className="flex flex-col items-center gap-6 py-16">
-      <p className="text-sm text-muted-foreground">この端末は koke につながっています。</p>
-      <Button variant="outline" onClick={() => setPairing(true)}>
-        PC で見る
-      </Button>
-      <ShowPairingCode open={pairing} onOpenChange={setPairing} />
-    </div>
-  )
+  return <Phone initial={state} />
 }

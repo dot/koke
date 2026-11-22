@@ -34,7 +34,7 @@ describe('invitation (A1, L1)', () => {
 
     const state = await call('/api/state', { cookie: cookieOf(res) })
     expect(state.status).toBe(200)
-    expect(await state.json()).toEqual({ read_only: false })
+    expect(await state.json()).toMatchObject({ read_only: false })
     expect(state.headers.get('Set-Cookie')).toBe(setCookie)
   })
 
@@ -163,7 +163,7 @@ describe('PC pairing (L7)', () => {
     expect(paired.headers.get('Set-Cookie')).toMatch(/; Path=\/; Max-Age=34560000; HttpOnly; Secure; SameSite=Lax$/)
     const pc = cookieOf(paired)
     const state = await call('/api/state', { cookie: pc })
-    expect(await state.json()).toEqual({ read_only: true })
+    expect(await state.json()).toMatchObject({ read_only: true })
     const write = await call('/api/pairing-codes', { cookie: pc, body: {} })
     expect(write.status).toBe(403)
     // Refused writes still count as use, so the PC stays signed in.
