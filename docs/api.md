@@ -83,7 +83,7 @@ Write requests on an existing session send `base_rev`, the `rev` the client last
 { "applied": true, "session": { … current head … } }
 ```
 
-`applied: false` means another request got there first; the client shows the returned head and moves on.
+`applied: false` means another request got there first; the client shows the returned head and moves on. The one exception is "not studying" after an absence (L5): it is the learner's answer, not a tap that may have fired twice, so the client sends the stop once more on the returned head if that session is still running.
 
 ## Endpoints
 

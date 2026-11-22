@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, CalendarDays, ListOrdered, Sprout } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { absenceToAsk } from './absence.ts'
+import { nextQuestion, type AwayQuestion } from './absence.ts'
 import { api, type Session, type State } from './api.ts'
 import { ShowPairingCode } from './screens/Pairing.tsx'
 import { Study } from './screens/Study.tsx'
@@ -44,7 +44,7 @@ type Write = { applied: boolean; session: Session }
 export function Phone({ initial }: { initial: State }) {
   const [state, setState] = useState(initial)
   const [tab, setTab] = useState<Tab>('study')
-  const [awayMinutes, setAwayMinutes] = useState<number | null>(null)
+  const [question, setQuestion] = useState<AwayQuestion | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pairing, setPairing] = useState(false)
   // The visibility handler reads the latest session without re-subscribing on every change.
@@ -66,15 +66,16 @@ export function Phone({ initial }: { initial: State }) {
   }, [])
 
   const send = useCallback(
-    async (path: string, body: Record<string, unknown>) => {
+    async (path: string, body: Record<string, unknown>): Promise<Write | null> => {
       const r = await write<Write>(path, body)
       if (!r.ok && 'offline' in r) {
         setNotice('つながらないので記録できませんでした')
         setTimeout(() => setNotice(null), 4000)
-        return
+        return null
       }
       // Whatever the answer (applied, stale, conflict), show what the server now holds.
       await refresh()
+      return r.ok ? r.body : null
     },
     [refresh],
   )
@@ -91,11 +92,22 @@ export function Phone({ initial }: { initial: State }) {
       const r = await write<Write>(`/api/sessions/${s.session_id}/away`, { base_rev: s.rev, away_at: hiddenAt })
       if (r.ok) current = (await refresh()) ?? current
     }
-    const minutes = absenceToAsk(current.running, load(HANDLED_AWAY_AT), Date.now(), current.away_threshold_minutes)
+    const handled = load(HANDLED_AWAY_AT)
     if (current.running?.away_at != null) save(HANDLED_AWAY_AT, current.running.away_at)
-    // Only the learner's answer closes the question; a later return that finds nothing new leaves it open.
-    if (minutes !== null) setAwayMinutes(minutes)
+    const { running: r, away_threshold_minutes: threshold } = current
+    setQuestion((open) => nextQuestion(open, r, handled, Date.now(), threshold))
   }, [refresh])
+
+  // "Not studying": the session ends at the moment koke went away. A stale stop (a late beacon,
+  // another tab) must not drop the answer, so it is sent once more on the head that came back.
+  const endAtAbsence = async (q: AwayQuestion) => {
+    let s = state.running
+    for (let attempt = 0; attempt < 2 && s?.session_id === q.sessionId && s.ended_at === null; attempt++) {
+      const r = await send(`/api/sessions/${q.sessionId}/stop`, { base_rev: s.rev, ended_at: q.awayAt })
+      if (!r || r.applied) return
+      s = r.session
+    }
+  }
 
   useEffect(() => {
     void onReturn()
@@ -127,13 +139,10 @@ export function Phone({ initial }: { initial: State }) {
             onStop={() => s && send(`/api/sessions/${s.session_id}/stop`, { base_rev: s.rev })}
             onSwitch={(id) => s && send(`/api/sessions/${s.session_id}/switch`, { base_rev: s.rev, subject_id: id })}
             onPickSubject={(id) => s && send(`/api/sessions/${s.session_id}/subject`, { base_rev: s.rev, subject_id: id })}
-            awayMinutes={awayMinutes}
+            awayMinutes={question?.minutes ?? null}
             onAwayAnswer={(studying) => {
-              setAwayMinutes(null)
-              // "Not studying": the session ends at the moment koke went away.
-              if (!studying && s?.away_at != null) {
-                void send(`/api/sessions/${s.session_id}/stop`, { base_rev: s.rev, ended_at: s.away_at })
-              }
+              setQuestion(null)
+              if (!studying && question) void endAtAbsence(question)
             }}
           />
         )}

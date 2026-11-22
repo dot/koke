@@ -35,6 +35,7 @@ An alert dialog over the running screen, shown when koke comes back after being 
 - Title "N 分離れていました", text "その間も勉強していましたか？".
 - "していた" (yes) keeps the session running. On the iPhone the two buttons are the only way to close the dialog (an alert dialog does not close on a tap outside it); closing it any other way, such as Escape on a keyboard, counts as yes.
 - "していなかった" (no) ends the session at the moment koke went away.
+- The question stays open until answered. If koke goes away again before the answer, the question keeps its first moment, since that is the earliest the learner may have stopped. If the session ends some other way meanwhile, the question goes away.
 
 ## Opened from the notification (L6)
 
