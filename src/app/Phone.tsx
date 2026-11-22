@@ -113,11 +113,12 @@ export function Phone({ initial }: { initial: State }) {
     void onReturn()
     const onVisibility = () => {
       if (document.visibilityState === 'visible') return void onReturn()
-      // Going away never ends a session (L5): it only records the moment.
-      const s = running.current
-      if (!s) return
+      // Going away never ends a session (L5): it only records the moment. The moment is kept even
+      // before a start has come back, so a lock right after 始める is still noticed on return.
       const now = Date.now()
       save(HIDDEN_AT, now)
+      const s = running.current
+      if (!s) return
       navigator.sendBeacon(
         `/api/sessions/${s.session_id}/away`,
         new Blob([JSON.stringify({ base_rev: s.rev, away_at: now })], { type: 'text/plain' }),
