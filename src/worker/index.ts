@@ -2,6 +2,7 @@ import { currentDevice, type Device } from './auth.ts'
 import { deviceCookie, error, json, readJson, sameOrigin } from './http.ts'
 import { CODE_HEADERS, inviteManifest, invitePage, spendInvitation } from './invite.ts'
 import { issuePairingCode, pairWithCode } from './pairing.ts'
+import { away, pickSubject, screenState, start, stop, switchSubject, type WriteResult } from './sessions.ts'
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
 
@@ -12,6 +13,11 @@ const INVITATION_CODE = /^[\w-]{22,}$/
 function signedIn(device: Device, res: Response): Response {
   res.headers.append('Set-Cookie', deviceCookie(device.token))
   return res
+}
+
+function writeResponse(result: WriteResult): Response {
+  if (result.kind === 'ok') return json({ applied: result.applied, session: result.session })
+  return error(result.kind)
 }
 
 async function api(req: Request, env: Env, path: string, now: number): Promise<Response> {
@@ -44,7 +50,27 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
   if (writes && device.kind === 'pc') return signedIn(device, error('forbidden'))
 
   if (path === '/api/state' && req.method === 'GET') {
-    return signedIn(device, json({ read_only: device.kind === 'pc' }))
+    return signedIn(device, json({ read_only: device.kind === 'pc', ...(await screenState(env.DB, device.user_id)) }))
+  }
+  if (path === '/api/sessions' && req.method === 'POST') {
+    const subjectId = (await readJson(req))?.subject_id ?? null
+    if (subjectId !== null && !Number.isSafeInteger(subjectId)) return signedIn(device, error('bad_request'))
+    return signedIn(device, writeResponse(await start(env.DB, device.user_id, subjectId as number | null, now)))
+  }
+  const write = path.match(/^\/api\/sessions\/(\d+)\/(stop|away|subject|switch)$/)
+  if (write && req.method === 'POST') {
+    const sessionId = Number(write[1])
+    // away also arrives from sendBeacon as text/plain; req.json() reads either.
+    const body = await readJson(req)
+    if (!body) return signedIn(device, error('bad_request'))
+    const { base_rev } = body
+    const run = {
+      stop: () => stop(env.DB, device.user_id, sessionId, base_rev, body.ended_at, now),
+      away: () => away(env.DB, device.user_id, sessionId, base_rev, body.away_at, now),
+      subject: () => pickSubject(env.DB, device.user_id, sessionId, base_rev, body.subject_id, now),
+      switch: () => switchSubject(env.DB, device.user_id, sessionId, base_rev, body.subject_id, now),
+    }[write[2] as 'stop' | 'away' | 'subject' | 'switch']
+    return signedIn(device, writeResponse(await run()))
   }
   if (path === '/api/pairing-codes' && req.method === 'POST') {
     const result = await issuePairingCode(env.DB, device.device_id, now)
