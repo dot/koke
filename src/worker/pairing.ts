@@ -57,7 +57,9 @@ export async function pairWithCode(db: D1Database, code: string, now: number): P
         `INSERT INTO devices (user_id, kind, paired_from, label, token_hash, created_at)
          SELECT d.user_id, 'pc', d.device_id, 'PC', ?, ?
          FROM pairing_codes c JOIN devices d ON d.device_id = c.device_id
-         WHERE c.code_hash = ? AND c.spent_at = ? AND changes() = 1`,
+         WHERE changes() = 1 AND c.pairing_code_id = (
+           -- The newest row with these digits is the one just spent; older ones may share its spent_at.
+           SELECT MAX(pairing_code_id) FROM pairing_codes WHERE code_hash = ? AND spent_at = ?)`,
       )
       .bind(tokenHash, now, codeHash, now),
     // A wrong guess outside a pause counts. After the limit, every code in force is spent and pairing pauses.

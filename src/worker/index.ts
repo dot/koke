@@ -1,11 +1,10 @@
 import { currentDevice, type Device } from './auth.ts'
 import { deviceCookie, error, json, readJson, sameOrigin } from './http.ts'
-import { inviteManifest, invitePage, spendInvitation } from './invite.ts'
+import { CODE_HEADERS, inviteManifest, invitePage, spendInvitation } from './invite.ts'
 import { issuePairingCode, pairWithCode } from './pairing.ts'
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
 
-const PAIRING_CODE = /^\d{6}$/
 // Invitation codes are randomToken(16) or longer: URL-safe base64.
 const INVITATION_CODE = /^[\w-]{22,}$/
 
@@ -32,9 +31,9 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
   }
   if (path === '/api/pair' && req.method === 'POST') {
     if (device) return signedIn(device, json({ read_only: device.kind === 'pc' }))
+    // Anything typed goes through the same check, so a malformed code also counts and sees the pause.
     const code = (await readJson(req))?.code
-    if (typeof code !== 'string' || !PAIRING_CODE.test(code)) return error('not_found')
-    const result = await pairWithCode(env.DB, code, now)
+    const result = await pairWithCode(env.DB, typeof code === 'string' ? code : '', now)
     if (result === null) return error('not_found')
     if (typeof result === 'object') return error('too_many_attempts', result)
     return json({ read_only: true }, { headers: { 'Set-Cookie': deviceCookie(result) } })
@@ -42,7 +41,7 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
 
   if (!device) return error('not_signed_in')
   // PC is view-only (L7).
-  if (writes && device.kind === 'pc') return error('forbidden')
+  if (writes && device.kind === 'pc') return signedIn(device, error('forbidden'))
 
   if (path === '/api/state' && req.method === 'GET') {
     return signedIn(device, json({ read_only: device.kind === 'pc' }))
@@ -65,6 +64,8 @@ export default {
     if (invite && req.method === 'GET') return invitePage(env.DB, invite[1], now)
     const manifest = url.pathname.match(/^\/manifest\/([\w-]+)$/)
     if (manifest && req.method === 'GET') return inviteManifest(manifest[1])
+    // Anything else under these paths may still carry a code in its URL: never serve it from assets.
+    if (/^\/(invite|manifest)\//.test(url.pathname)) return new Response(null, { status: 404, headers: CODE_HEADERS })
 
     return env.ASSETS.fetch(req)
   },

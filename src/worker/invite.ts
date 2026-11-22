@@ -1,7 +1,7 @@
 import { sha256, randomToken } from './crypto.ts'
 
 // Responses whose URL carries a code: the code must not leak through Referer or a cache.
-const CODE_HEADERS = { 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' }
+export const CODE_HEADERS = { 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
