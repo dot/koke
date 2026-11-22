@@ -208,6 +208,17 @@ describe('switch (L3)', () => {
     expect(n === 1 ? state.running : state.running?.subject_id).toBe(n === 1 ? null : english)
   })
 
+  it('answers a stale base_rev with the head before looking at the subject', async () => {
+    const phone = await newPhone()
+    const math = await addSubject(phone.userId, 'math')
+    const other = await newPhone()
+    const theirs = await addSubject(other.userId, 'theirs')
+    const { session } = (await start(phone.cookie, { subject_id: math })).body
+    await post(phone.cookie, `/api/sessions/${session.session_id}/away`, { base_rev: 1, away_at: Date.now() })
+    const { status, body } = await post(phone.cookie, `/api/sessions/${session.session_id}/switch`, { base_rev: 1, subject_id: theirs })
+    expect(status).toBe(200)
+    expect(body).toMatchObject({ applied: false, session: { rev: 2 } })
+  })
 })
 
 describe('screen state (#4)', () => {

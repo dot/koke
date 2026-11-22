@@ -180,9 +180,9 @@ export async function switchSubject(db: D1Database, userId: number, sessionId: n
   if (!Number.isSafeInteger(baseRev) || !Number.isSafeInteger(subjectId)) return { kind: 'bad_request' }
   const before = await head(db, userId, sessionId)
   if (!before) return { kind: 'not_found' }
-  if (!(await ownsSubject(db, userId, subjectId as number))) return { kind: 'not_found' }
   if (before.rev !== baseRev) return { kind: 'ok', applied: false, session: toSession(before) }
   if (!running(before)) return { kind: 'conflict' }
+  if (!(await ownsSubject(db, userId, subjectId as number))) return { kind: 'not_found' }
   const [stopped] = await db.batch([
     appendRevision(db, userId, sessionId, before.rev, { ended_at: now }, 'app', now),
     ...startStatements(db, userId, subjectId as number, now, true),
