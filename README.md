@@ -1,3 +1,5 @@
+<img src="public/icon-192.png" width="96" height="96" alt="koke icon: moss on a bonsai tray">
+
 # koke
 
 A personal study-time heatmap that grows like moss (苔, *koke*).

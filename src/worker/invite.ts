@@ -36,6 +36,8 @@ export async function invitePage(db: D1Database, code: string, now: number): Pro
 <title>koke</title>
 ${usable ? `<link rel="manifest" href="/manifest/${esc(code)}">` : ''}
 <link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <style>
   :root { color-scheme: light dark; --bg: #f7f8f2; --fg: #1f2a22; --muted: #5d6b60; }
   @media (prefers-color-scheme: dark) { :root { --bg: #151b17; --fg: #e8ece4; --muted: #9aa79c; } }
@@ -69,6 +71,7 @@ export function inviteManifest(code: string): Response {
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   }
   return new Response(JSON.stringify(manifest), {

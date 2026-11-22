@@ -10,6 +10,7 @@
     "test": "vitest run",
     "deploy": "npm run build && wrangler deploy",
     "admin": "node scripts/admin.ts",
+    "icon": "node scripts/icon.ts",
     "db:migrate:local": "wrangler d1 migrations apply koke --local",
     "db:seed:synthetic": "node scripts/seed-synthetic.mjs"
   },
