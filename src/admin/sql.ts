@@ -32,11 +32,12 @@ UPDATE pairing_codes SET spent_at = ${int(now)} WHERE device_id = ${int(deviceId
 }
 
 // New or lost phone, or a leaked link: shut every way in, including invitations not yet used.
+// Unused invitations expire at 0, not now: a handoff that took its time before this ran must still fail.
 export function revokeUser(userId: number, now: number): string {
   const u = int(userId)
   return `UPDATE devices SET revoked_at = ${int(now)} WHERE user_id = ${u} AND revoked_at IS NULL;
 DELETE FROM push_subscriptions WHERE device_id IN (SELECT device_id FROM devices WHERE user_id = ${u});
 UPDATE pairing_codes SET spent_at = ${int(now)}
   WHERE spent_at IS NULL AND device_id IN (SELECT device_id FROM devices WHERE user_id = ${u});
-UPDATE invitations SET expires_at = ${int(now)} WHERE user_id = ${u} AND used_at IS NULL AND expires_at > ${int(now)};`
+UPDATE invitations SET expires_at = 0 WHERE user_id = ${u} AND used_at IS NULL;`
 }

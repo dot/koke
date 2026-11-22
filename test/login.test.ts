@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { INVITATION_TTL } from '../src/worker/constants.ts'
+import { spendInvitation } from '../src/worker/invite.ts'
 import {
   call,
   cookieOf,
@@ -212,6 +213,14 @@ describe('revocation (A1)', () => {
       .run()
     await revoke.device(phone.deviceId)
     expect(await count('SELECT COUNT(*) AS n FROM push_subscriptions WHERE device_id = ?', phone.deviceId)).toBe(0)
+  })
+
+  it('refuses an invitation cancelled by revoking its user, even for a handoff that started earlier', async () => {
+    const userId = await newUser()
+    const code = await newInvitation(userId)
+    const startedAt = Date.now() - 1000
+    await revoke.user(userId)
+    expect(await spendInvitation(env.DB, code, startedAt)).toBeNull()
   })
 
   it('revoking a user ends every device, pairing code and unused invitation, and a new invitation carries on', async () => {
