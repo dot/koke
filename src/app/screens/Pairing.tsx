@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp'
@@ -6,14 +6,17 @@ import { api, type State } from '../api.ts'
 
 const PAUSED = 'しばらくしてから、新しい番号でもう一度'
 
-function useNow(active: boolean): number {
+// Ticks every second while active. refresh() catches up at once, for a value read right after
+// a pause in ticking (the sheet was closed).
+function useNow(active: boolean): [number, () => void] {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     if (!active) return
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [active])
-  return now
+  const refresh = useCallback(() => setNow(Date.now()), [])
+  return [now, refresh]
 }
 
 type Shown = { kind: 'loading' } | { kind: 'code'; code: string; expires_at: number } | { kind: 'paused' }
@@ -21,13 +24,27 @@ type Shown = { kind: 'loading' } | { kind: 'code'; code: string; expires_at: num
 // Phone side (L7). Each opening of the sheet asks for a new code.
 export function ShowPairingCode({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [shown, setShown] = useState<Shown>({ kind: 'loading' })
-  const now = useNow(open)
+  const [now, refreshNow] = useNow(open)
   useEffect(() => {
     if (!open) return
-    api<{ code: string; expires_at: number }>('/api/pairing-codes', {}).then((r) =>
-      setShown(r.ok ? { kind: 'code', ...r.body } : { kind: 'paused' }),
-    )
-  }, [open])
+    // A reply that lands after the sheet closed belongs to a code the next opening already replaced.
+    let current = true
+    api<{ code: string; expires_at: number }>('/api/pairing-codes', {}).then((r) => {
+      if (!current) return
+      if (r.ok) {
+        refreshNow()
+        setShown({ kind: 'code', ...r.body })
+      } else if (r.status === 429) {
+        setShown({ kind: 'paused' })
+      } else {
+        // This phone is no longer signed in (revoked): start over from the sign-in check.
+        location.reload()
+      }
+    })
+    return () => {
+      current = false
+    }
+  }, [open, refreshNow])
 
   const left = shown.kind === 'code' ? Math.max(0, Math.ceil((shown.expires_at - now) / 1000)) : 0
   return (
@@ -72,7 +89,8 @@ export function PairPc({ onPaired }: { onPaired: (state: State) => void }) {
   const [code, setCode] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [pausedUntil, setPausedUntil] = useState(0)
-  const paused = useNow(pausedUntil > 0) < pausedUntil
+  const [now] = useNow(pausedUntil > 0)
+  const paused = now < pausedUntil
 
   async function submit() {
     const r = await api<State>('/api/pair', { code })
