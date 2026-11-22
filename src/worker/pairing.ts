@@ -1,0 +1,83 @@
+import { PAIRING_CODE_TTL, PAIRING_MAX_FAILURES, PAIRING_PAUSE } from './constants.ts'
+import { randomPairingCode, randomToken, sha256 } from './crypto.ts'
+
+export type Paused = { paused_until: number }
+
+async function pausedUntil(db: D1Database, now: number): Promise<number | null> {
+  const row = await db.prepare('SELECT paused_until FROM pairing_guard WHERE guard_id = 1').first<Paused>()
+  return row && row.paused_until > now ? row.paused_until : null
+}
+
+// POST /api/pairing-codes, from a phone. A new code replaces any the phone showed before.
+export async function issuePairingCode(
+  db: D1Database,
+  phoneId: number,
+  now: number,
+): Promise<{ code: string; expires_at: number } | Paused> {
+  const paused = await pausedUntil(db, now)
+  if (paused) return { paused_until: paused }
+  const expires = now + PAIRING_CODE_TTL
+  for (;;) {
+    const code = randomPairingCode()
+    const [, , inserted] = await db.batch([
+      // Expired codes leave the in-force index, so their digits can be issued again.
+      db.prepare('UPDATE pairing_codes SET spent_at = ? WHERE spent_at IS NULL AND expires_at <= ?').bind(now, now),
+      db.prepare('UPDATE pairing_codes SET spent_at = ? WHERE spent_at IS NULL AND device_id = ?').bind(now, phoneId),
+      db
+        .prepare(
+          `INSERT INTO pairing_codes (code_hash, device_id, created_at, expires_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(await sha256(code), phoneId, now, expires),
+    ])
+    // Another phone holds the same digits right now: draw again.
+    if (inserted.meta.changes === 1) return { code, expires_at: expires }
+  }
+}
+
+// POST /api/pair, from a PC. Returns a pc token, null for a wrong code, or the pause.
+export async function pairWithCode(db: D1Database, code: string, now: number): Promise<string | null | Paused> {
+  const paused = await pausedUntil(db, now)
+  if (paused) return { paused_until: paused }
+
+  const codeHash = await sha256(code)
+  const token = randomToken(32)
+  const [, inserted] = await db.batch([
+    // Only a code from a phone that is still valid can be spent.
+    db
+      .prepare(
+        `UPDATE pairing_codes SET spent_at = ?
+         WHERE code_hash = ? AND spent_at IS NULL AND expires_at > ?
+           AND device_id IN (SELECT device_id FROM devices WHERE kind = 'phone' AND revoked_at IS NULL)`,
+      )
+      .bind(now, codeHash, now),
+    db
+      .prepare(
+        `INSERT INTO devices (user_id, kind, paired_from, label, token_hash, created_at)
+         SELECT d.user_id, 'pc', d.device_id, 'PC', ?, ?
+         FROM pairing_codes c JOIN devices d ON d.device_id = c.device_id
+         WHERE c.code_hash = ? AND c.spent_at = ? AND changes() = 1`,
+      )
+      .bind(await sha256(token), now, codeHash, now),
+  ])
+  if (inserted.meta.changes === 1) return token
+
+  // A wrong guess. After the limit, every code in force is spent and pairing pauses (ADR 2).
+  const [, , pause] = await db.batch([
+    db.prepare('UPDATE pairing_guard SET failures = failures + 1 WHERE guard_id = 1'),
+    db
+      .prepare(
+        `UPDATE pairing_codes SET spent_at = ?
+         WHERE spent_at IS NULL AND (SELECT failures FROM pairing_guard WHERE guard_id = 1) >= ?`,
+      )
+      .bind(now, PAIRING_MAX_FAILURES),
+    db
+      .prepare(
+        `UPDATE pairing_guard SET failures = 0, paused_until = ?
+         WHERE guard_id = 1 AND failures >= ? RETURNING paused_until`,
+      )
+      .bind(now + PAIRING_PAUSE, PAIRING_MAX_FAILURES),
+  ])
+  const row = pause.results[0] as Paused | undefined
+  return row ? { paused_until: row.paused_until } : null
+}

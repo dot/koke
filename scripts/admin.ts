@@ -1,0 +1,89 @@
+// Admin steps for A1 (ADR 2). There is no admin screen in v1; this wraps `wrangler d1 execute`.
+//
+//   npm run admin -- [--remote] user add <display name>
+//   npm run admin -- [--remote] invite <user_id>          prints the invitation URL
+//   npm run admin -- [--remote] devices <user_id>
+//   npm run admin -- [--remote] revoke-device <device_id>
+//   npm run admin -- [--remote] revoke-user <user_id>
+//
+// Without --remote it acts on the local database used by `npm run dev`.
+// KOKE_ORIGIN sets the origin printed in invitation URLs (default http://localhost:5173).
+
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { addInvitation, addUser, listDevices, revokeDevice, revokeUser } from '../src/admin/sql.ts'
+import { INVITATION_TTL } from '../src/worker/constants.ts'
+import { randomToken, sha256 } from '../src/worker/crypto.ts'
+
+const args = process.argv.slice(2)
+const remote = args[0] === '--remote'
+const [command, ...rest] = remote ? args.slice(1) : args
+
+function execute(sql: string): Record<string, unknown>[] {
+  // The SQL holds only hashes, never a code, so the temporary file is safe to write.
+  const dir = mkdtempSync(path.join(tmpdir(), 'koke-admin-'))
+  const file = path.join(dir, 'admin.sql')
+  writeFileSync(file, sql)
+  try {
+    const out = execFileSync(
+      'npx',
+      ['wrangler', 'd1', 'execute', 'koke', remote ? '--remote' : '--local', '--file', file, '--json'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+    )
+    const results = JSON.parse(out) as { results: Record<string, unknown>[] }[]
+    return results.flatMap((r) => r.results)
+  } finally {
+    rmSync(dir, { recursive: true })
+  }
+}
+
+function id(value: string | undefined, what: string): number {
+  const n = Number(value)
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    console.error(`${what} must be a positive integer`)
+    process.exit(1)
+  }
+  return n
+}
+
+const now = Date.now()
+switch (command) {
+  case 'user': {
+    const name = rest.slice(1).join(' ').trim()
+    if (rest[0] !== 'add' || !name) {
+      console.error('usage: user add <display name>')
+      process.exit(1)
+    }
+    console.log(execute(addUser(name, now)))
+    break
+  }
+  case 'invite': {
+    const userId = id(rest[0], 'user_id')
+    const code = randomToken(16)
+    const rows = execute(addInvitation(userId, await sha256(code), now, INVITATION_TTL))
+    if (rows.length === 0) {
+      console.error(`no user ${userId}`)
+      process.exit(1)
+    }
+    const origin = process.env.KOKE_ORIGIN ?? 'http://localhost:5173'
+    console.log(`${origin}/invite/${code}`)
+    console.log('Single use, valid for 24 hours. Hand it to the learner directly.')
+    break
+  }
+  case 'devices':
+    console.table(execute(listDevices(id(rest[0], 'user_id'))))
+    break
+  case 'revoke-device':
+    execute(revokeDevice(id(rest[0], 'device_id'), now))
+    console.log('revoked')
+    break
+  case 'revoke-user':
+    execute(revokeUser(id(rest[0], 'user_id'), now))
+    console.log('revoked every device, pairing code and unused invitation of this user')
+    break
+  default:
+    console.error('commands: user add <name> | invite <user_id> | devices <user_id> | revoke-device <id> | revoke-user <id>')
+    process.exit(1)
+}
