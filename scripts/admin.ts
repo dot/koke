@@ -10,9 +10,6 @@
 // KOKE_ORIGIN sets the origin printed in invitation URLs (default http://localhost:5173).
 
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { addInvitation, addUser, listDevices, revokeDevice, revokeUser } from '../src/admin/sql.ts'
 import { INVITATION_TTL } from '../src/worker/constants.ts'
 import { randomToken, sha256 } from '../src/worker/crypto.ts'
@@ -21,22 +18,16 @@ const args = process.argv.slice(2)
 const remote = args[0] === '--remote'
 const [command, ...rest] = remote ? args.slice(1) : args
 
+// --command, not --file: with --remote, --file prints upload progress on stdout ahead of the JSON.
+// The SQL holds only hashes, never a code, so passing it as an argument is safe.
 function execute(sql: string): Record<string, unknown>[] {
-  // The SQL holds only hashes, never a code, so the temporary file is safe to write.
-  const dir = mkdtempSync(path.join(tmpdir(), 'koke-admin-'))
-  const file = path.join(dir, 'admin.sql')
-  writeFileSync(file, sql)
-  try {
-    const out = execFileSync(
-      'npx',
-      ['wrangler', 'd1', 'execute', 'koke', remote ? '--remote' : '--local', '--file', file, '--json'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
-    )
-    const results = JSON.parse(out) as { results: Record<string, unknown>[] }[]
-    return results.flatMap((r) => r.results)
-  } finally {
-    rmSync(dir, { recursive: true })
-  }
+  const out = execFileSync(
+    'npx',
+    ['wrangler', 'd1', 'execute', 'koke', remote ? '--remote' : '--local', '--command', sql, '--json'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] },
+  )
+  const results = JSON.parse(out) as { results: Record<string, unknown>[] }[]
+  return results.flatMap((r) => r.results)
 }
 
 function id(value: string | undefined, what: string): number {
