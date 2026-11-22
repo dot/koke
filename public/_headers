@@ -1,0 +1,7 @@
+# The PWA's first launch opens /?handoff=<invitation code> (ADR 2).
+/*
+  Referrer-Policy: no-referrer
+/
+  Cache-Control: no-store
+/index.html
+  Cache-Control: no-store

@@ -1,6 +1,6 @@
 # koke data model and HTTP API
 
-This is the contract between the PWA (#4, #5, #7, #9), the scheduled job (#6) and the login (#13). The schema is `migrations/0001_init.sql`. Use cases are referred to by their ids in `docs/use-cases.md`.
+This is the contract between the PWA (#4, #5, #7, #9), the scheduled job (#6) and the login (#13). The schema is `migrations/0001_init.sql`, with the login tables in `migrations/0002_login.sql`. Use cases are referred to by their ids in `docs/use-cases.md`.
 
 ## Data model
 
@@ -14,7 +14,14 @@ All times are UTC epoch milliseconds. Days are JST calendar days, worked out in 
 | `session_revisions` | **insert only** | The history of each session (below). |
 | `push_subscriptions` | insert and delete | Where to send "still studying?" (L6). One per subscribing device. |
 
-Login tables (`invitations`, `devices`, `pairing_codes`) are added by #13 (ADR 2).
+Login tables (ADR 2, #13) are login state, not session data, so their rows are updated in place:
+
+| Table | Changes | Purpose |
+|---|---|---|
+| `devices` | insert; `revoked_at` set | One row per signed-in phone or PC. Holds the SHA-256 of the device token, never the token. A `pc` row names the phone it was paired from. |
+| `invitations` | insert; `used_at`, `device_id` set | Single-use invitation codes (hashed), valid for 24 hours. |
+| `pairing_codes` | insert; `spent_at` set | 6-digit codes (hashed) a phone shows for pairing a PC, valid for 5 minutes. A partial unique index keeps codes in force from colliding. |
+| `pairing_guard` | one row, updated | The service-wide count of wrong pairing attempts and the pause that follows. |
 
 ### Revisions
 
@@ -58,7 +65,8 @@ A session is **running** when its current revision has `ended_at` null and `dele
 - `pc` devices are read-only. Any request that changes state returns `403`.
 - Requests that change state must carry an `Origin` header equal to koke's own origin; otherwise `403`.
 - Bodies are JSON. `away` also accepts `text/plain` holding JSON, because `navigator.sendBeacon` cannot set a JSON content type without a preflight.
-- Errors are `{"error": "<code>"}` with a matching status: `400 bad_request`, `401 not_signed_in`, `403 forbidden`, `404 not_found`, `409 conflict`.
+- Errors are `{"error": "<code>"}` with a matching status: `400 bad_request`, `401 not_signed_in`, `403 forbidden`, `404 not_found`, `409 conflict`, and `429 too_many_attempts` for pairing while it is paused (with `paused_until`).
+- Every response to a signed-in device re-issues its cookie with a fresh `Max-Age`, so a device in use stays signed in.
 
 A session in a response looks like:
 
@@ -79,9 +87,27 @@ Write requests on an existing session send `base_rev`, the `rev` the client last
 
 ## Endpoints
 
+### Login (A1, L1, L7)
+
+These follow ADR 2. The two ways in work without a cookie; both still check `Origin`.
+
+| Request | Body | Notes |
+|---|---|---|
+| `GET /invite/:code` | – | HTML with the add-to-home-screen steps, linking `/manifest/:code`. Changes nothing. A used, expired or unknown code shows "ask the admin for a new link" with `404`. Sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. |
+| `GET /manifest/:code` | – | The invitation's manifest, with `start_url` `/?handoff=<code>`. Changes nothing. Same headers. Other pages use the static `/manifest.webmanifest` (`start_url` `/`). |
+| `POST /api/handoff` | `{ "code": "…" }` | Sent by the PWA on launch when it has no valid cookie. Spends the invitation and issues a `phone` device in one D1 batch, and sets the cookie. With a valid cookie it changes nothing and answers for that device: koke never switches accounts. A used, expired or unknown code is `404`. |
+| `POST /api/pairing-codes` | `{}` | Phone only. `{ "code": "482913", "expires_at": … }`. Spends any code this phone showed before. While pairing is paused, `429`. |
+| `POST /api/pair` | `{ "code": "482913" }` | From a PC without a cookie. If the code is in force and its phone is valid, issues a `pc` device paired from that phone, spends the code and sets the cookie. A wrong, used or expired code is `404` and counts as a wrong attempt. The fifth wrong attempt across koke spends every code in force and pauses pairing for 15 minutes; during the pause every attempt is `429`. |
+
+`/api/handoff` and `/api/pair` answer `{ "read_only": … }`, like `GET /api/state`.
+
+The launch URL `/?handoff=` is served as a static file and never reaches the Worker, so it cannot change state. Its `Referrer-Policy` and `Cache-Control` come from `public/_headers`.
+
 ### Screen state
 
 `GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null }`
+
+Without a valid cookie it is `401`; the PWA then exchanges a `handoff` code if it has one, and otherwise asks for a new invitation (home-screen app) or shows PC pairing (browser tab). Until #4 lands it answers only `read_only`.
 
 The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out.
 
@@ -214,3 +240,23 @@ FROM session_revisions WHERE session_id = 812 ORDER BY rev;
 ```
 
 `sessions_current` scans every revision, which is fine for an occasional manual read but counts toward the daily free rows.
+
+## Inviting and revoking (A1)
+
+`scripts/admin.ts` wraps `wrangler d1 execute`. Add `--remote` for production; without it, it acts on the local database that `npm run dev` uses. The SQL it runs is in `src/admin/sql.ts`.
+
+```sh
+npm run admin -- --remote user add "Hanako"          # prints the new user_id
+KOKE_ORIGIN=https://<koke origin> npm run admin -- --remote invite 1
+npm run admin -- --remote devices 1                  # device_id, kind, paired_from, times (JST)
+npm run admin -- --remote revoke-device 3
+npm run admin -- --remote revoke-user 1
+```
+
+- `invite` prints the invitation URL once and stores only its hash. Hand the URL to the learner directly; it is single use and lasts 24 hours.
+- `revoke-device` shuts out one device, every PC paired from it and the pairing codes it showed, and deletes its push subscriptions.
+- `revoke-user` does that for every device of the learner and also cancels invitations not yet used.
+
+**New or lost phone, or a leaked link:** `revoke-user`, then `invite` again for the same `user_id`. The records carry on.
+
+**The learner added koke to the home screen from the wrong page** (the app says it cannot be used and asks for a new link): delete the home-screen icon, `invite` again, and have the learner add koke from the new invitation page. This was tried on a real iPhone after revoking its device: the new icon signed in to the same `user_id`.

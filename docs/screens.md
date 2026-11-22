@@ -62,7 +62,7 @@ Tapping the "still studying?" notification opens koke, which reads the current s
 - PC without a valid cookie: a code entry (six boxes). A correct code opens the moss.
 - A wrong code says "番号が違います" and keeps the boxes for another try. An expired or used code says the same, since the PC cannot tell them apart from a wrong one.
 - While pairing is paused after 5 wrong attempts across koke (ADR 2), the PC says "しばらくしてから、新しい番号でもう一度" and the boxes are disabled until the pause ends.
-- On the iPhone, a code that ran out shows "時間切れです。もう一度開いてください"; closing and reopening the sheet asks for a new code. During a pause the sheet says the same as the PC instead of showing a code.
+- On the iPhone, a code that ran out shows "時間切れです。もう一度開いてください"; closing and reopening the sheet asks for a new code. If pairing is paused when the sheet opens, it says the same as the PC instead of showing a code. A pause that starts while the sheet is open does not change it; the code shown has already been spent and simply no longer works.
 
 ## 記録: records (L8)
 
