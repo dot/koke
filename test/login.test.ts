@@ -163,6 +163,17 @@ describe('PC pairing (L7)', () => {
     expect((await call('/api/pair', { body: { code: await pairingCode(phone.cookie) } })).status).toBe(200)
   })
 
+  it('allows at most 5 wrong guesses even when they arrive at the same time', async () => {
+    const phone = await newPhone()
+    const code = await pairingCode(phone.cookie)
+    const wrong = code === '000000' ? '000001' : '000000'
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => call('/api/pair', { body: { code: wrong } }).then((r) => r.status)),
+    )
+    expect(results.filter((s) => s === 404).length).toBeLessThanOrEqual(4)
+    expect(results.filter((s) => s === 429).length).toBeGreaterThanOrEqual(8)
+  })
+
   it('never has two codes in force with the same digits', async () => {
     const a = await newPhone()
     const b = await newPhone()

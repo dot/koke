@@ -36,21 +36,22 @@ export async function issuePairingCode(
 }
 
 // POST /api/pair, from a PC. Returns a pc token, null for a wrong code, or the pause.
+// The pause check, the guess and the failure count are one batch: D1 runs batches one at a time,
+// so guesses sent in parallel still each see the count left by the ones before (ADR 2: 5 per code).
 export async function pairWithCode(db: D1Database, code: string, now: number): Promise<string | null | Paused> {
-  const paused = await pausedUntil(db, now)
-  if (paused) return { paused_until: paused }
-
   const codeHash = await sha256(code)
   const token = randomToken(32)
-  const [, inserted] = await db.batch([
+  const tokenHash = await sha256(token)
+  const open = '(SELECT paused_until FROM pairing_guard WHERE guard_id = 1) <= ?'
+  const [, inserted, , , , guard] = await db.batch([
     // Only a code from a phone that is still valid can be spent.
     db
       .prepare(
         `UPDATE pairing_codes SET spent_at = ?
-         WHERE code_hash = ? AND spent_at IS NULL AND expires_at > ?
+         WHERE code_hash = ? AND spent_at IS NULL AND expires_at > ? AND ${open}
            AND device_id IN (SELECT device_id FROM devices WHERE kind = 'phone' AND revoked_at IS NULL)`,
       )
-      .bind(now, codeHash, now),
+      .bind(now, codeHash, now, now),
     db
       .prepare(
         `INSERT INTO devices (user_id, kind, paired_from, label, token_hash, created_at)
@@ -58,13 +59,14 @@ export async function pairWithCode(db: D1Database, code: string, now: number): P
          FROM pairing_codes c JOIN devices d ON d.device_id = c.device_id
          WHERE c.code_hash = ? AND c.spent_at = ? AND changes() = 1`,
       )
-      .bind(await sha256(token), now, codeHash, now),
-  ])
-  if (inserted.meta.changes === 1) return token
-
-  // A wrong guess. After the limit, every code in force is spent and pairing pauses (ADR 2).
-  const [, , pause] = await db.batch([
-    db.prepare('UPDATE pairing_guard SET failures = failures + 1 WHERE guard_id = 1'),
+      .bind(tokenHash, now, codeHash, now),
+    // A wrong guess outside a pause counts. After the limit, every code in force is spent and pairing pauses.
+    db
+      .prepare(
+        `UPDATE pairing_guard SET failures = failures + 1
+         WHERE guard_id = 1 AND paused_until <= ? AND NOT EXISTS (SELECT 1 FROM devices WHERE token_hash = ?)`,
+      )
+      .bind(now, tokenHash),
     db
       .prepare(
         `UPDATE pairing_codes SET spent_at = ?
@@ -72,12 +74,11 @@ export async function pairWithCode(db: D1Database, code: string, now: number): P
       )
       .bind(now, PAIRING_MAX_FAILURES),
     db
-      .prepare(
-        `UPDATE pairing_guard SET failures = 0, paused_until = ?
-         WHERE guard_id = 1 AND failures >= ? RETURNING paused_until`,
-      )
+      .prepare('UPDATE pairing_guard SET failures = 0, paused_until = ? WHERE guard_id = 1 AND failures >= ?')
       .bind(now + PAIRING_PAUSE, PAIRING_MAX_FAILURES),
+    db.prepare('SELECT paused_until FROM pairing_guard WHERE guard_id = 1'),
   ])
-  const row = pause.results[0] as Paused | undefined
-  return row ? { paused_until: row.paused_until } : null
+  if (inserted.meta.changes === 1) return token
+  const pausedUntilAfter = (guard.results[0] as Paused).paused_until
+  return pausedUntilAfter > now ? { paused_until: pausedUntilAfter } : null
 }
