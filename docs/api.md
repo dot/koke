@@ -259,4 +259,4 @@ npm run admin -- --remote revoke-user 1
 
 **New or lost phone, or a leaked link:** `revoke-user`, then `invite` again for the same `user_id`. The records carry on.
 
-**The learner added koke to the home screen from the wrong page** (the app says it cannot be used and asks for a new link): delete the home-screen icon, `invite` again, and have the learner add koke from the new invitation page. This is the fix ADR 2 expects; it has not yet been tried on a real iPhone (#13).
+**The learner added koke to the home screen from the wrong page** (the app says it cannot be used and asks for a new link): delete the home-screen icon, `invite` again, and have the learner add koke from the new invitation page. This was tried on a real iPhone after revoking its device: the new icon signed in to the same `user_id`.
