@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp'
-import { api, type State } from '../api.ts'
+import { api } from '../api.ts'
 
 const PAUSED = 'しばらくしてから、新しい番号でもう一度'
 
@@ -85,7 +85,7 @@ export function ShowPairingCode({ open, onOpenChange }: { open: boolean; onOpenC
 }
 
 // PC side (L7): a browser without a valid cookie lands here.
-export function PairPc({ onPaired }: { onPaired: (state: State) => void }) {
+export function PairPc({ onPaired }: { onPaired: () => void }) {
   const [code, setCode] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [pausedUntil, setPausedUntil] = useState(0)
@@ -93,8 +93,8 @@ export function PairPc({ onPaired }: { onPaired: (state: State) => void }) {
   const paused = now < pausedUntil
 
   async function submit() {
-    const r = await api<State>('/api/pair', { code })
-    if (r.ok) return onPaired(r.body)
+    const r = await api('/api/pair', { code })
+    if (r.ok) return onPaired()
     if (r.body.paused_until) {
       setPausedUntil(r.body.paused_until)
       setMessage(PAUSED)

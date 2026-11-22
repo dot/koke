@@ -11,4 +11,23 @@ export async function api<T>(path: string, body?: unknown): Promise<ApiResult<T>
   return res.ok ? { ok: true, body: json as T } : { ok: false, status: res.status, body: json }
 }
 
-export type State = { read_only: boolean }
+export type Session = {
+  session_id: number
+  rev: number
+  subject_id: number | null
+  recorded_at: number
+  started_at: number
+  ended_at: number | null
+  away_at: number | null
+  prompted_at: number | null
+}
+
+export type Subject = { subject_id: number; parent_id: number | null; name: string }
+
+export type State = {
+  read_only: boolean
+  running: Session | null
+  subjects: Subject[]
+  last_subject_id: number | null
+  away_threshold_minutes: number
+}
