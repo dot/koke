@@ -46,7 +46,7 @@ switch (command) {
     const flag = rest.indexOf('--subjects')
     const subjects = flag === -1 ? [] : (rest[flag + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const name = (flag === -1 ? rest.slice(1) : rest.slice(1, flag)).join(' ').trim()
-    if (rest[0] !== 'add' || !name || (flag !== -1 && subjects.length === 0) ||
+    if (rest[0] !== 'add' || !name || (flag !== -1 && (subjects.length === 0 || rest.length !== flag + 2)) ||
       subjects.some((s) => [...s].length > SUBJECT_NAME_MAX)) {
       console.error('usage: user add <display name> [--subjects 国語,数学,英語]')
       process.exit(1)
