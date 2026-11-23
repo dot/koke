@@ -11,6 +11,16 @@ export function addUser(name: string, now: number): string {
   return `INSERT INTO users (display_name, created_at) VALUES (${str(name)}, ${int(now)}) RETURNING user_id;`
 }
 
+// A1: the subjects the admin names when creating the account, top-level in the order given.
+export function addSubjects(userId: number, names: string[], now: number): string {
+  return names
+    .map(
+      (name, i) =>
+        `INSERT INTO subjects (user_id, name, position, created_at) VALUES (${int(userId)}, ${str(name)}, ${int(i + 1)}, ${int(now)});`,
+    )
+    .join('\n')
+}
+
 export function addInvitation(userId: number, codeHash: string, now: number, ttl: number): string {
   return `INSERT INTO invitations (user_id, code_hash, created_at, expires_at)
 SELECT user_id, ${str(codeHash)}, ${int(now)}, ${int(now + ttl)} FROM users WHERE user_id = ${int(userId)}
