@@ -55,7 +55,7 @@ const running = (h: Head) => h.ended_at === null && h.deleted === 0
 
 async function ownsSubject(db: D1Database, userId: number, subjectId: number): Promise<boolean> {
   const row = await db
-    .prepare('SELECT 1 FROM subjects WHERE subject_id = ? AND user_id = ?')
+    .prepare('SELECT 1 FROM subjects WHERE subject_id = ? AND user_id = ? AND deleted_at IS NULL')
     .bind(subjectId, userId)
     .first()
   return row !== null
@@ -198,7 +198,7 @@ export async function screenState(db: D1Database, userId: number) {
     .prepare(
       `SELECT c.subject_id, c.parent_id, c.name
        FROM subjects c LEFT JOIN subjects p ON p.subject_id = c.parent_id
-       WHERE c.user_id = ? AND c.hidden = 0 AND (p.subject_id IS NULL OR p.hidden = 0)
+       WHERE c.user_id = ? AND c.hidden = 0 AND c.deleted_at IS NULL AND (p.subject_id IS NULL OR p.hidden = 0)
        ORDER BY c.position`,
     )
     .bind(userId)

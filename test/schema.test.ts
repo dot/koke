@@ -73,6 +73,16 @@ describe('revisions', () => {
     expect(await history(id)).toHaveLength(2)
   })
 
+  it('refuses a new revision that points at a deleted subject, after ignoring a stale one', async () => {
+    const userId = await newUser()
+    const gone = await subject(userId)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(gone).run()
+    const id = await session(userId)
+    await expect(revision(id, 2, userId, { subject_id: gone })).rejects.toThrow(/subject is deleted/)
+    await revision(id, 2, userId)
+    expect((await revision(id, 2, userId, { subject_id: gone })).meta.changes).toBe(0)
+  })
+
   it('refuses to reopen an ended or deleted session', async () => {
     const userId = await newUser()
     const ended = await session(userId, { ended: true })

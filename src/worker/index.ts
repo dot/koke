@@ -3,7 +3,7 @@ import { deviceCookie, error, json, readJson, sameOrigin } from './http.ts'
 import { CODE_HEADERS, inviteManifest, invitePage, spendInvitation } from './invite.ts'
 import { issuePairingCode, pairWithCode } from './pairing.ts'
 import { away, pickSubject, screenState, start, stop, switchSubject, type WriteResult } from './sessions.ts'
-import { addSubject, changeSubject, listSubjects, reorderSubjects, type SubjectResult } from './subjects.ts'
+import { addSubject, changeSubject, deleteSubject, listSubjects, reorderSubjects, type SubjectResult } from './subjects.ts'
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
 
@@ -97,6 +97,9 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
     const body = await readJson(req)
     if (!body) return signedIn(device, error('bad_request'))
     return signedIn(device, subjectResponse(await changeSubject(env.DB, device.user_id, Number(subject[1]), body)))
+  }
+  if (subject && req.method === 'DELETE') {
+    return signedIn(device, subjectResponse(await deleteSubject(env.DB, device.user_id, Number(subject[1]), now)))
   }
   if (path === '/api/pairing-codes' && req.method === 'POST') {
     const result = await issuePairingCode(env.DB, device.device_id, now)
