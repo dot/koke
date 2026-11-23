@@ -34,11 +34,13 @@ describe('add a subject (L9)', () => {
     expect((await add(phone.cookie, {})).status).toBe(400)
   })
 
-  it("answers 404 for another learner's parent", async () => {
+  it("answers 404 for another learner's or an unknown parent, and 400 for one that is not an id", async () => {
     const phone = await newPhone()
     const other = await newPhone()
     const theirs = (await add(other.cookie, { name: 'theirs' })).body
     expect((await add(phone.cookie, { name: 'x', parent_id: theirs.subject_id })).status).toBe(404)
+    expect((await add(phone.cookie, { name: 'x', parent_id: 999_999 })).status).toBe(404)
+    expect((await add(phone.cookie, { name: 'x', parent_id: '1' })).status).toBe(400)
   })
 
   it('refuses to put a subject under a child, since subjects nest one level', async () => {
