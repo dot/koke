@@ -326,6 +326,12 @@ describe('revocation (A1)', () => {
     const pc = await newPc(phone.cookie)
     const code = await pairingCode(phone.cookie)
     const leaked = await newInvitation(phone.userId)
+    // A running session with a second revision, which must survive the revocation untouched.
+    const started = ((await (await call('/api/sessions', { cookie: phone.cookie, body: {} })).json()) as { session: { session_id: number } }).session
+    await call(`/api/sessions/${started.session_id}/away`, { cookie: phone.cookie, body: { base_rev: 1, away_at: Date.now() } })
+    // Another learner, signed in and holding an unused invitation, must not be touched.
+    const bystander = await newPhone()
+    const theirs = await newInvitation(bystander.userId)
     await revoke.user(phone.userId)
 
     expect((await call('/api/state', { cookie: phone.cookie })).status).toBe(401)
@@ -334,6 +340,10 @@ describe('revocation (A1)', () => {
     expect((await call('/api/handoff', { body: { code: leaked } })).status).toBe(404)
 
     const again = await newPhone(phone.userId)
-    expect((await call('/api/state', { cookie: again.cookie })).status).toBe(200)
+    const state = (await (await call('/api/state', { cookie: again.cookie })).json()) as { running: { session_id: number; rev: number } | null }
+    expect(state.running).toMatchObject({ session_id: started.session_id, rev: 2 })
+
+    expect((await call('/api/state', { cookie: bystander.cookie })).status).toBe(200)
+    expect((await call('/api/handoff', { body: { code: theirs } })).status).toBe(200)
   })
 })
