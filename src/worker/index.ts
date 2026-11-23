@@ -3,6 +3,7 @@ import { deviceCookie, error, json, readJson, sameOrigin } from './http.ts'
 import { CODE_HEADERS, inviteManifest, invitePage, spendInvitation } from './invite.ts'
 import { issuePairingCode, pairWithCode } from './pairing.ts'
 import { away, pickSubject, screenState, start, stop, switchSubject, type WriteResult } from './sessions.ts'
+import { addSubject, changeSubject, listSubjects, reorderSubjects, type SubjectResult } from './subjects.ts'
 
 export type Env = { DB: D1Database; ASSETS: Fetcher }
 
@@ -18,6 +19,10 @@ function signedIn(device: Device, res: Response): Response {
 function writeResponse(result: WriteResult): Response {
   if (result.kind === 'ok') return json({ applied: result.applied, session: result.session })
   return error(result.kind)
+}
+
+function subjectResponse<T>(result: SubjectResult<T>): Response {
+  return result.kind === 'ok' ? json(result.body) : error(result.kind)
 }
 
 async function api(req: Request, env: Env, path: string, now: number): Promise<Response> {
@@ -73,6 +78,25 @@ async function api(req: Request, env: Env, path: string, now: number): Promise<R
       switch: () => switchSubject(env.DB, device.user_id, sessionId, base_rev, body.subject_id, now),
     }[write[2] as 'stop' | 'away' | 'subject' | 'switch']
     return signedIn(device, writeResponse(await run()))
+  }
+  if (path === '/api/subjects' && req.method === 'GET') {
+    return signedIn(device, json(await listSubjects(env.DB, device.user_id)))
+  }
+  if (path === '/api/subjects' && req.method === 'POST') {
+    const body = await readJson(req)
+    if (!body) return signedIn(device, error('bad_request'))
+    return signedIn(device, subjectResponse(await addSubject(env.DB, device.user_id, body, now)))
+  }
+  if (path === '/api/subjects/order' && req.method === 'PUT') {
+    const body = await readJson(req)
+    if (!body) return signedIn(device, error('bad_request'))
+    return signedIn(device, subjectResponse(await reorderSubjects(env.DB, device.user_id, body.subject_ids)))
+  }
+  const subject = path.match(/^\/api\/subjects\/(\d+)$/)
+  if (subject && req.method === 'PATCH') {
+    const body = await readJson(req)
+    if (!body) return signedIn(device, error('bad_request'))
+    return signedIn(device, subjectResponse(await changeSubject(env.DB, device.user_id, Number(subject[1]), body)))
   }
   if (path === '/api/pairing-codes' && req.method === 'POST') {
     const result = await issuePairingCode(env.DB, device.device_id, now)
