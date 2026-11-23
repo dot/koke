@@ -73,6 +73,16 @@ describe('revisions', () => {
     expect(await history(id)).toHaveLength(2)
   })
 
+  it('refuses a new revision that points at a deleted subject, after ignoring a stale one', async () => {
+    const userId = await newUser()
+    const gone = await subject(userId)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(gone).run()
+    const id = await session(userId)
+    await expect(revision(id, 2, userId, { subject_id: gone })).rejects.toThrow(/subject is deleted/)
+    await revision(id, 2, userId)
+    expect((await revision(id, 2, userId, { subject_id: gone })).meta.changes).toBe(0)
+  })
+
   it('refuses to reopen an ended or deleted session', async () => {
     const userId = await newUser()
     const ended = await session(userId, { ended: true })
@@ -105,6 +115,27 @@ describe('subjects', () => {
     await expect(
       db.prepare("INSERT OR REPLACE INTO subjects (subject_id, user_id, name, position, created_at) VALUES (?, ?, 'x', 1, 0)").bind(id, other).run(),
     ).rejects.toThrow(/cannot be replaced/)
+  })
+
+  it('refuses a second live sibling with the same name key, but not once the first is deleted', async () => {
+    const userId = await newUser()
+    const insert = (parentId: number | null) =>
+      db.prepare("INSERT INTO subjects (user_id, parent_id, name, name_key, position, created_at) VALUES (?, ?, 'Math', 'math', 1, 0) RETURNING subject_id")
+        .bind(userId, parentId)
+        .first<{ subject_id: number }>()
+    const first = await insert(null)
+    await expect(insert(null)).rejects.toThrow(/UNIQUE/)
+    // Under a parent the same key is free; at the top level it is free again once the first is deleted.
+    await insert((await subject(userId))!)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(first!.subject_id).run()
+    await insert(null)
+  })
+
+  it('refuses a child under a deleted parent', async () => {
+    const userId = await newUser()
+    const parent = await subject(userId)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(parent).run()
+    await expect(subject(userId, parent)).rejects.toThrow(/parent is deleted/)
   })
 
   it('keeps nesting one level deep and within one learner', async () => {

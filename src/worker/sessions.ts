@@ -55,7 +55,7 @@ const running = (h: Head) => h.ended_at === null && h.deleted === 0
 
 async function ownsSubject(db: D1Database, userId: number, subjectId: number): Promise<boolean> {
   const row = await db
-    .prepare('SELECT 1 FROM subjects WHERE subject_id = ? AND user_id = ?')
+    .prepare('SELECT 1 FROM subjects WHERE subject_id = ? AND user_id = ? AND deleted_at IS NULL')
     .bind(subjectId, userId)
     .first()
   return row !== null
@@ -112,6 +112,10 @@ async function latestHead(db: D1Database, userId: number): Promise<Head | null> 
     .first<Head>()
 }
 
+// The subject was checked, then deleted before the write: the schema refuses the revision, and the
+// answer is the same 404 as if it had been deleted first. A failed batch writes nothing.
+const subjectDeleted = (e: unknown) => String(e).includes('subject is deleted')
+
 // POST /api/sessions (L2)
 export async function start(db: D1Database, userId: number, subjectId: number | null, now: number): Promise<WriteResult> {
   if (subjectId !== null && !(await ownsSubject(db, userId, subjectId))) return { kind: 'not_found' }
@@ -120,6 +124,7 @@ export async function start(db: D1Database, userId: number, subjectId: number | 
   } catch (e) {
     // The schema refuses a new session while the latest one is still running.
     if (String(e).includes('the previous session is not over')) return { kind: 'conflict' }
+    if (subjectDeleted(e)) return { kind: 'not_found' }
     throw e
   }
   return { kind: 'ok', applied: true, session: toSession((await latestHead(db, userId))!) }
@@ -142,7 +147,13 @@ async function onRunning(
   if (!running(before)) return { kind: 'conflict' }
   const next = await write(before)
   if ('kind' in next) return next
-  const result = await next.run()
+  let result: D1Result
+  try {
+    result = await next.run()
+  } catch (e) {
+    if (subjectDeleted(e)) return { kind: 'not_found' }
+    throw e
+  }
   return { kind: 'ok', applied: result.meta.changes === 1, session: toSession((await head(db, userId, sessionId))!) }
 }
 
@@ -183,10 +194,16 @@ export async function switchSubject(db: D1Database, userId: number, sessionId: n
   if (before.rev !== baseRev) return { kind: 'ok', applied: false, session: toSession(before) }
   if (!running(before)) return { kind: 'conflict' }
   if (!(await ownsSubject(db, userId, subjectId as number))) return { kind: 'not_found' }
-  const [stopped] = await db.batch([
-    appendRevision(db, userId, sessionId, before.rev, { ended_at: now }, 'app', now),
-    ...startStatements(db, userId, subjectId as number, now, true),
-  ])
+  let stopped: D1Result
+  try {
+    ;[stopped] = await db.batch([
+      appendRevision(db, userId, sessionId, before.rev, { ended_at: now }, 'app', now),
+      ...startStatements(db, userId, subjectId as number, now, true),
+    ])
+  } catch (e) {
+    if (subjectDeleted(e)) return { kind: 'not_found' }
+    throw e
+  }
   if (stopped.meta.changes !== 1) return { kind: 'ok', applied: false, session: toSession((await head(db, userId, sessionId))!) }
   return { kind: 'ok', applied: true, session: toSession((await latestHead(db, userId))!) }
 }
@@ -198,7 +215,7 @@ export async function screenState(db: D1Database, userId: number) {
     .prepare(
       `SELECT c.subject_id, c.parent_id, c.name
        FROM subjects c LEFT JOIN subjects p ON p.subject_id = c.parent_id
-       WHERE c.user_id = ? AND c.hidden = 0 AND (p.subject_id IS NULL OR p.hidden = 0)
+       WHERE c.user_id = ? AND c.hidden = 0 AND c.deleted_at IS NULL AND (p.subject_id IS NULL OR p.hidden = 0)
        ORDER BY c.position`,
     )
     .bind(userId)

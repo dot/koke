@@ -80,7 +80,10 @@ Tapping the "still studying?" notification opens koke, which reads the current s
 
 - An add form: the name, and "上の教科なし" or "<parent> の下" to place it under a parent. Only top-level subjects can be parents.
 - The list: each parent with its children indented below it. Each row has up and down arrows that move it among its siblings, and a switch that shows or hides it. A hidden subject is struck through; the children of a hidden parent are dimmed.
-- Tapping a name opens "名前を変える" (rename) in a sheet: the name and "保存する".
+- Tapping a name opens "教科を編集" (edit) in a sheet: the name and "保存する", and below them "この教科を消す" (delete).
+  - Delete is disabled, with the reason below it, when a record uses the subject ("記録があるので消せません。スイッチで隠せます") or it has children ("下に教科があるので消せません").
+  - Delete asks first: "「数学」を消しますか？" with "やめる" and "消す".
+- A name a sibling already has shows "同じ名前の教科があります" under the field, with "（隠しています）" when that sibling is hidden, and "足す" / "保存する" stay disabled.
 - A note under the list: hidden subjects leave the start buttons, hiding a parent hides its children too, and past records stay in the moss.
 
 ## Not in the prototype

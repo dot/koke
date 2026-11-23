@@ -25,7 +25,7 @@ export type Session = {
 export type Subject = { subject_id: number; parent_id: number | null; name: string }
 
 // GET /api/subjects: every subject, hidden ones included, for the subjects tab (L9).
-export type SubjectSetting = Subject & { hidden: boolean }
+export type SubjectSetting = Subject & { hidden: boolean; used: boolean }
 
 export type State = {
   read_only: boolean

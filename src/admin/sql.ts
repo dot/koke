@@ -1,6 +1,8 @@
 // SQL for the admin steps (A1, ADR 2). scripts/admin.ts runs it with `wrangler d1 execute`,
 // which takes no bound parameters, so every value is a checked integer or an escaped string.
 
+import { nameKey } from '../shared/subject-name.ts'
+
 const int = (n: number) => {
   if (!Number.isSafeInteger(n)) throw new Error(`not an integer: ${n}`)
   return String(n)
@@ -12,11 +14,12 @@ export function addUser(name: string, now: number): string {
 }
 
 // A1: the subjects the admin names when creating the account, top-level in the order given.
+// A repeated name fails the whole command on the unique index, as it would in the subjects tab.
 export function addSubjects(userId: number, names: string[], now: number): string {
   return names
     .map(
       (name, i) =>
-        `INSERT INTO subjects (user_id, name, position, created_at) VALUES (${int(userId)}, ${str(name)}, ${int(i + 1)}, ${int(now)});`,
+        `INSERT INTO subjects (user_id, name, name_key, position, created_at) VALUES (${int(userId)}, ${str(name)}, ${str(nameKey(name))}, ${int(i + 1)}, ${int(now)});`,
     )
     .join('\n')
 }
