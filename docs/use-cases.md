@@ -61,7 +61,7 @@ The learner opens a past session and changes its start time, end time or subject
 
 ### L9. Manage subjects
 
-The learner adds subjects, reorders them and hides the ones they no longer use. Hidden subjects keep their past records. Each learner has their own subject list.
+The learner adds subjects, renames them, reorders them and hides the ones they no longer use. Hidden subjects keep their past records. A subject that no current record uses, such as one made by mistake, can be deleted; a used one can only be hidden. Names are unique among siblings. Each learner has their own subject list.
 
 Subjects can be grouped one level deep: a subject may sit under a parent subject (for example Math > Math I). A session has at most one subject, either a parent or a child; it may have none.
 

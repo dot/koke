@@ -9,7 +9,7 @@ All times are UTC epoch milliseconds. Days are JST calendar days, worked out in 
 | Table | Changes | Purpose |
 |---|---|---|
 | `users` | insert; `display_name` may change | One row per learner. Every other row hangs off `user_id`. |
-| `subjects` | edited in place | A learner's subject list (L9): `name`, `position`, `hidden`, and `parent_id` for a subject grouped under another. Hidden subjects keep their sessions. |
+| `subjects` | edited in place | A learner's subject list (L9): `name`, `position`, `hidden`, and `parent_id` for a subject grouped under another. Hidden subjects keep their sessions. A deleted subject keeps its row with `deleted_at` set, because old revisions still point at it. |
 | `sessions` | **insert only** | Fixes a session's owner and the order sessions were created in. Always inserted in the same D1 batch as the session's rev 1. |
 | `session_revisions` | **insert only** | The history of each session (below). |
 | `push_subscriptions` | insert and delete | Where to send "still studying?" (L6). One per subscribing device. |
@@ -159,14 +159,18 @@ The switch batch has three statements. The second and third are `INSERT … SELE
 | `POST /api/subjects` | `{ "name": "math", "parent_id"?: 3 }` → appended at the end |
 | `PATCH /api/subjects/:id` | `{ "name"?, "hidden"? }` |
 | `PUT /api/subjects/order` | `{ "subject_ids": [3, 1, 2] }` (must list every subject of the learner; children are shown in this order under their parent) |
+| `DELETE /api/subjects/:id` | – |
 
-A subject in a response is `{ "subject_id": 3, "parent_id": null, "name": "math", "hidden": false }`. `POST` and `PATCH` return the subject; `GET` and `PUT` return the whole list.
+A subject in a response is `{ "subject_id": 3, "parent_id": null, "name": "math", "hidden": false, "used": true }`. `POST` and `PATCH` return the subject; `GET`, `PUT` and `DELETE` return the whole list.
 
 - `name` is trimmed and must be 1 to 40 characters; otherwise `400`.
+- Names are unique among siblings: top-level subjects among themselves, and the children of one parent among themselves. Two names are the same when they differ only in surrounding spaces, full- and half-width forms (NFKC) or letter case. Hidden subjects count. A duplicate on `POST` or `PATCH` is `409`.
 - `parent_id` must be one of the learner's top-level subjects. Another learner's subject or an unknown id is `404`; a child is `400`, since subjects nest one level.
 - `PATCH` with neither field, or a `hidden` that is not a boolean, is `400`. Another learner's subject is `404`.
 - `PUT /api/subjects/order` is `400` unless the list names each of the learner's subjects exactly once.
-- A subject is never deleted and never moves to another parent.
+- `used` is true when the current revision of a session that is not deleted points at the subject. Old revisions do not count: a subject picked and then corrected away, or used only by a deleted record, is not used.
+- `DELETE` is `409` for a used subject or a parent that still has children. It sets `deleted_at` rather than removing the row, since old revisions still point at the subject and D1 enforces foreign keys. From then on the subject is absent everywhere: lists, `/api/state`, the moss filter, and any request naming it (`404`). Its name is free again. The schema refuses a new revision that points at a deleted subject. `session_revisions (subject_id)` is indexed so the `used` check reads only the revisions that point at the subject.
+- A subject never moves to another parent.
 
 ### Push (L1, L6)
 
