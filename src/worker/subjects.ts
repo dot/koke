@@ -80,6 +80,8 @@ export async function reorderSubjects(db: D1Database, userId: number, ids: unkno
   if (ids.length !== mine.size || new Set(ids).size !== ids.length || !ids.every((id) => mine.has(id))) {
     return { kind: 'bad_request' }
   }
+  // D1 refuses an empty batch; a learner with no subjects has nothing to reorder.
+  if (ids.length === 0) return { kind: 'ok', body: [] }
   await db.batch(
     ids.map((id, i) => db.prepare('UPDATE subjects SET position = ? WHERE subject_id = ? AND user_id = ?').bind(i + 1, id, userId)),
   )

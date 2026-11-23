@@ -50,8 +50,18 @@ describe('add a subject (L9)', () => {
 
   it('is refused on a PC, which only views', async () => {
     const phone = await newPhone()
+    const math = (await add(phone.cookie, { name: '数学' })).body
     const pc = await newPc(phone.cookie)
     expect((await add(pc, { name: 'x' })).status).toBe(403)
+    expect((await patch(pc, math.subject_id, { name: 'x' })).status).toBe(403)
+    expect((await order(pc, [math.subject_id])).status).toBe(403)
+  })
+
+  it("lists only the learner's own subjects", async () => {
+    const phone = await newPhone()
+    const other = await newPhone()
+    await add(other.cookie, { name: 'theirs' })
+    expect(await list(phone.cookie)).toEqual([])
   })
 })
 
@@ -107,6 +117,13 @@ describe('reorder subjects (L9)', () => {
     expect(status).toBe(200)
     expect(names(body)).toEqual(['c', 'a', 'b'])
     expect(names(await list(phone.cookie))).toEqual(['c', 'a', 'b'])
+  })
+
+  it('accepts an empty list from a learner with no subjects', async () => {
+    const phone = await newPhone()
+    const { status, body } = await order(phone.cookie, [])
+    expect(status).toBe(200)
+    expect(body).toEqual([])
   })
 
   it('refuses a list that misses, repeats or borrows a subject', async () => {
