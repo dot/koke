@@ -1,0 +1,169 @@
+import { useEffect, useState } from 'react'
+import { ArrowDown, ArrowUp } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { api, type SubjectSetting } from '../api.ts'
+import { write } from '../write.ts'
+
+type Props = {
+  // The start buttons come from GET /api/state, so it is read again after every change.
+  onChanged: () => void
+  onOffline: () => void
+}
+
+// L9: add (optionally under a parent), rename, reorder among siblings and hide.
+export function Subjects({ onChanged, onOffline }: Props) {
+  const [subjects, setSubjects] = useState<SubjectSetting[] | null>(null)
+  const [name, setName] = useState('')
+  const [parent, setParent] = useState('none')
+  const [renaming, setRenaming] = useState<SubjectSetting | null>(null)
+  const [newName, setNewName] = useState('')
+
+  useEffect(() => {
+    void api<SubjectSetting[]>('/api/subjects')
+      .then((r) => r.ok && setSubjects(r.body))
+      .catch(onOffline)
+  }, [onOffline])
+
+  // Every answer carries the subject or list the server now holds; a refusal leaves the screen as it was.
+  async function change<T>(path: string, body: Record<string, unknown>, method: string, apply: (body: T) => void) {
+    const r = await write<T>(path, body, method)
+    if (!r.ok) {
+      if ('offline' in r) onOffline()
+      return false
+    }
+    apply(r.body)
+    onChanged()
+    return true
+  }
+  const replace = (s: SubjectSetting) => setSubjects((ss) => ss && ss.map((x) => (x.subject_id === s.subject_id ? s : x)))
+
+  if (subjects === null) return null
+
+  const parents = subjects.filter((s) => s.parent_id === null)
+  const parentItems = [
+    { value: 'none', label: '上の教科なし' },
+    ...parents.map((s) => ({ value: String(s.subject_id), label: `${s.name} の下` })),
+  ]
+
+  const move = (s: SubjectSetting, d: -1 | 1) => {
+    const sib = subjects.filter((x) => x.parent_id === s.parent_id)
+    const other = sib[sib.indexOf(s) + d]
+    const ids = subjects.map((x) => x.subject_id)
+    const i = ids.indexOf(s.subject_id)
+    const j = ids.indexOf(other.subject_id)
+    ;[ids[i], ids[j]] = [ids[j], ids[i]]
+    void change<SubjectSetting[]>('/api/subjects/order', { subject_ids: ids }, 'PUT', setSubjects)
+  }
+
+  const row = (s: SubjectSetting, child: boolean) => {
+    const sib = subjects.filter((x) => x.parent_id === s.parent_id)
+    const i = sib.indexOf(s)
+    // Hiding a parent hides its children from the start buttons too, whatever their own switch says.
+    const underHidden = child && parents.some((p) => p.subject_id === s.parent_id && p.hidden)
+    return (
+      <div key={s.subject_id} className={cn('flex items-center gap-2 py-2 pr-3', child ? 'pl-8' : 'pl-3')}>
+        <button
+          type="button"
+          className={cn(
+            'flex-1 text-left',
+            child && 'text-sm',
+            underHidden && 'text-muted-foreground',
+            s.hidden && 'text-muted-foreground line-through',
+          )}
+          onClick={() => {
+            setNewName(s.name)
+            setRenaming(s)
+          }}
+        >
+          {s.name}
+        </button>
+        <Button variant="ghost" size="icon-sm" aria-label="上へ" disabled={i === 0} onClick={() => move(s, -1)}>
+          <ArrowUp />
+        </Button>
+        <Button variant="ghost" size="icon-sm" aria-label="下へ" disabled={i === sib.length - 1} onClick={() => move(s, 1)}>
+          <ArrowDown />
+        </Button>
+        <Switch
+          aria-label="表示する"
+          checked={!s.hidden}
+          onCheckedChange={(on) => void change(`/api/subjects/${s.subject_id}`, { hidden: !on }, 'PATCH', replace)}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4 py-4">
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          const n = name.trim()
+          if (!n) return
+          const body = parent === 'none' ? { name: n } : { name: n, parent_id: Number(parent) }
+          if (await change<SubjectSetting>('/api/subjects', body, 'POST', (s) => setSubjects((ss) => ss && [...ss, s]))) setName('')
+        }}
+      >
+        <div className="flex gap-2">
+          <Input placeholder="新しい教科" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
+          <Button type="submit" disabled={!name.trim()}>
+            足す
+          </Button>
+        </div>
+        <Select items={parentItems} value={parent} onValueChange={(v) => v && setParent(v)}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {parentItems.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </form>
+
+      {subjects.length > 0 && (
+        <div className="flex flex-col divide-y overflow-hidden rounded-xl border">
+          {parents.map((p) => (
+            <div key={p.subject_id} className="flex flex-col divide-y divide-dashed">
+              {row(p, false)}
+              {subjects.filter((c) => c.parent_id === p.subject_id).map((c) => row(c, true))}
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="px-1 text-xs text-muted-foreground">
+        スイッチを切った教科はボタンに出なくなります。上の教科を切ると、その下の教科も出なくなります。これまでの記録はそのまま苔に残ります。
+      </p>
+
+      <Drawer open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>名前を変える</DrawerTitle>
+          </DrawerHeader>
+          <form
+            className="flex flex-col gap-3 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const n = newName.trim()
+              if (!renaming || !n) return
+              if (await change(`/api/subjects/${renaming.subject_id}`, { name: n }, 'PATCH', replace)) setRenaming(null)
+            }}
+          >
+            <Input value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} />
+            <Button type="submit" size="lg" disabled={!newName.trim() || newName.trim() === renaming?.name}>
+              保存する
+            </Button>
+          </form>
+        </DrawerContent>
+      </Drawer>
+    </div>
+  )
+}

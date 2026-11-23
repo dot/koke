@@ -92,11 +92,13 @@ export function Study({ state, onStart, onStop, onSwitch, onPickSubject, awayMin
           <Button size="lg" className="h-28 rounded-2xl text-2xl" onClick={() => onStart(null)}>
             始める
           </Button>
-          {subjects.length > 0 && (
+          {subjects.length > 0 ? (
             <div className="flex flex-col gap-3">
               <span className="text-sm text-muted-foreground">教科を決めて始める</span>
               <SubjectPicker subjects={subjects} lastSubjectId={last_subject_id} onPick={(id) => onStart(id)} />
             </div>
+          ) : (
+            <p className="text-center text-sm text-muted-foreground">教科は「教科」タブで足せます。</p>
           )}
         </div>
       )}
