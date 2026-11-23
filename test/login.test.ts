@@ -231,24 +231,33 @@ describe('PC pairing (L7)', () => {
     }
   })
 
-  it('pairs even when the same digits were spent earlier at the same moment', async () => {
-    const phone = await newPhone()
+  it('pairs with the phone holding the code now, even when the same digits were spent earlier at the same moment', async () => {
+    const earlier = await newPhone()
+    const holder = await newPhone()
+    const running = ((await (await call('/api/sessions', { cookie: holder.cookie, body: {} })).json()) as { session: { session_id: number } }).session
     const code = '424242'
     const at = Date.now()
     const hash = await sha256(code)
-    // An earlier holder of these digits, spent at `at`, and the code in force now.
+    // Another learner's phone held these digits before, spent at `at`; the holder's code is in force now.
     await env.DB.batch([
       env.DB.prepare(
         'INSERT INTO pairing_codes (code_hash, device_id, created_at, expires_at, spent_at) VALUES (?, ?, ?, ?, ?)',
-      ).bind(hash, phone.deviceId, at - 600_000, at - 300_000, at),
+      ).bind(hash, earlier.deviceId, at - 600_000, at - 300_000, at),
       env.DB.prepare('INSERT INTO pairing_codes (code_hash, device_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(
         hash,
-        phone.deviceId,
+        holder.deviceId,
         at,
         at + 300_000,
       ),
     ])
-    expect(typeof (await pairWithCode(env.DB, code, at))).toBe('string')
+    const token = await pairWithCode(env.DB, code, at)
+    expect(typeof token).toBe('string')
+    const state = (await (await call('/api/state', { cookie: `__Host-koke=${token}` })).json()) as {
+      read_only: boolean
+      running: { session_id: number } | null
+    }
+    expect(state.read_only).toBe(true)
+    expect(state.running?.session_id).toBe(running.session_id)
   })
 
   it('never has two codes in force with the same digits', async () => {
