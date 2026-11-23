@@ -37,7 +37,7 @@ While a session is running, the learner taps "stop". The session ends at that mo
 
 Locking the phone or switching to another app does not end a session. Studying on paper with the phone locked on the desk is the normal case, and the session simply keeps running.
 
-What koke does is notice when the phone comes back. When the learner reopens koke after it was away longer than a fixed threshold, it asks "You were away for N minutes. Were you still studying?" The default is yes: answering "yes" (or dismissing the question) keeps the session running as if nothing happened. Only answering "no" ends the session, and then the end time is the moment the phone went away, so time spent elsewhere is not counted. Shorter absences are never asked about.
+What koke does is notice when the phone comes back. When the learner reopens koke after it was away for at least a fixed threshold, it asks "You were away for N minutes. Were you still studying?" The default is yes: answering "yes" (or dismissing the question) keeps the session running as if nothing happened. Only answering "no" ends the session, and then the end time is the moment the phone went away, so time spent elsewhere is not counted. Shorter absences are never asked about.
 
 ### L6. Forget to stop
 
