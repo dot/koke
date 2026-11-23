@@ -1,13 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { nameKey } from '../../shared/subject-name.ts'
 import { api, type SubjectSetting } from '../api.ts'
 import { write } from '../write.ts'
+
+// What to show under a name that a sibling already has; the server refuses it with 409 as well.
+function duplicateNote(subjects: SubjectSetting[], name: string, parentId: number | null, except: number | null): string | null {
+  const key = nameKey(name)
+  if (!key) return null
+  const same = subjects.find((s) => s.parent_id === parentId && s.subject_id !== except && nameKey(s.name) === key)
+  if (!same) return null
+  return same.hidden ? '同じ名前の教科があります（隠しています）' : '同じ名前の教科があります'
+}
 
 type Props = {
   // The start buttons come from GET /api/state, so it is read again after every change.
@@ -15,15 +34,15 @@ type Props = {
   onOffline: () => void
 }
 
-// L9: add (optionally under a parent), rename, reorder among siblings and hide.
+// L9: add (optionally under a parent), rename, delete an unused one, reorder among siblings and hide.
 export function Subjects({ onChanged, onOffline }: Props) {
   const [subjects, setSubjects] = useState<SubjectSetting[] | null>(null)
   const [name, setName] = useState('')
   const [parent, setParent] = useState('none')
-  const [renaming, setRenaming] = useState<SubjectSetting | null>(null)
+  const [editing, setEditing] = useState<SubjectSetting | null>(null)
   const [newName, setNewName] = useState('')
-  // One write at a time: a second tap on a slow connection would add the same subject twice, and
-  // subjects cannot be deleted.
+  const [confirming, setConfirming] = useState(false)
+  // One write at a time, so a second tap on a slow connection cannot send the same change twice.
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
@@ -56,6 +75,18 @@ export function Subjects({ onChanged, onOffline }: Props) {
   if (subjects === null) return null
 
   const parents = subjects.filter((s) => s.parent_id === null)
+  const parentId = parent === 'none' ? null : Number(parent)
+  const addNote = duplicateNote(subjects, name, parentId, null)
+  const editNote = editing && duplicateNote(subjects, newName, editing.parent_id, editing.subject_id)
+  // Why the edit sheet cannot delete this subject, or null when it can.
+  const keep =
+    editing === null
+      ? null
+      : editing.used
+        ? '記録があるので消せません。スイッチで隠せます'
+        : subjects.some((c) => c.parent_id === editing.subject_id)
+          ? '下に教科があるので消せません'
+          : null
   const parentItems = [
     { value: 'none', label: '上の教科なし' },
     ...parents.map((s) => ({ value: String(s.subject_id), label: `${s.name} の下` })),
@@ -88,7 +119,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
           )}
           onClick={() => {
             setNewName(s.name)
-            setRenaming(s)
+            setEditing(s)
           }}
         >
           {s.name}
@@ -117,16 +148,18 @@ export function Subjects({ onChanged, onOffline }: Props) {
           e.preventDefault()
           const n = name.trim()
           if (!n) return
-          const body = parent === 'none' ? { name: n } : { name: n, parent_id: Number(parent) }
+          if (!n || addNote) return
+          const body = parentId === null ? { name: n } : { name: n, parent_id: parentId }
           if (await change<SubjectSetting>('/api/subjects', body, 'POST', (s) => setSubjects((ss) => ss && [...ss, s]))) setName('')
         }}
       >
         <div className="flex gap-2">
-          <Input placeholder="新しい教科" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
-          <Button type="submit" disabled={busy || !name.trim()}>
+          <Input placeholder="新しい教科" value={name} maxLength={40} aria-invalid={addNote !== null} onChange={(e) => setName(e.target.value)} />
+          <Button type="submit" disabled={busy || !name.trim() || addNote !== null}>
             足す
           </Button>
         </div>
+        {addNote && <p className="px-1 text-xs text-destructive">{addNote}</p>}
         <Select items={parentItems} value={parent} onValueChange={(v) => v && setParent(v)}>
           <SelectTrigger className="w-full">
             <SelectValue />
@@ -155,27 +188,57 @@ export function Subjects({ onChanged, onOffline }: Props) {
         スイッチを切った教科はボタンに出なくなります。上の教科を切ると、その下の教科も出なくなります。これまでの記録はそのまま苔に残ります。
       </p>
 
-      <Drawer open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
+      <Drawer open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DrawerContent>
           <DrawerHeader>
-            <DrawerTitle>名前を変える</DrawerTitle>
+            <DrawerTitle>教科を編集</DrawerTitle>
           </DrawerHeader>
-          <form
-            className="flex flex-col gap-3 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
-            onSubmit={async (e) => {
-              e.preventDefault()
-              const n = newName.trim()
-              if (!renaming || !n) return
-              if (await change(`/api/subjects/${renaming.subject_id}`, { name: n }, 'PATCH', replace)) setRenaming(null)
-            }}
-          >
-            <Input value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} />
-            <Button type="submit" size="lg" disabled={busy || !newName.trim() || newName.trim() === renaming?.name}>
-              保存する
-            </Button>
-          </form>
+          <div className="flex flex-col gap-6 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const n = newName.trim()
+                if (!editing || !n || editNote) return
+                if (await change(`/api/subjects/${editing.subject_id}`, { name: n }, 'PATCH', replace)) setEditing(null)
+              }}
+            >
+              <Input value={newName} maxLength={40} aria-invalid={Boolean(editNote)} onChange={(e) => setNewName(e.target.value)} />
+              {editNote && <p className="px-1 text-xs text-destructive">{editNote}</p>}
+              <Button type="submit" size="lg" disabled={busy || !newName.trim() || Boolean(editNote) || newName.trim() === editing?.name}>
+                保存する
+              </Button>
+            </form>
+            <div className="flex flex-col gap-1">
+              <Button variant="ghost" className="text-destructive" disabled={busy || keep !== null} onClick={() => setConfirming(true)}>
+                この教科を消す
+              </Button>
+              {keep && <p className="text-center text-xs text-muted-foreground">{keep}</p>}
+            </div>
+          </div>
         </DrawerContent>
       </Drawer>
+
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>「{editing?.name}」を消しますか？</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>やめる</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                setConfirming(false)
+                if (!editing) return
+                if (await change<SubjectSetting[]>(`/api/subjects/${editing.subject_id}`, {}, 'DELETE', setSubjects)) setEditing(null)
+              }}
+            >
+              消す
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
