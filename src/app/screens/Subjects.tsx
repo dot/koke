@@ -39,18 +39,26 @@ export function Subjects({ onChanged, onOffline }: Props) {
   const [subjects, setSubjects] = useState<SubjectSetting[] | null>(null)
   const [name, setName] = useState('')
   const [parent, setParent] = useState('none')
-  const [editing, setEditing] = useState<SubjectSetting | null>(null)
+  // The id, not the row: the sheet follows the list the server last sent, so a refused delete
+  // shows the fresh reason and a subject that vanished closes the sheet.
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [newName, setNewName] = useState('')
   const [confirming, setConfirming] = useState(false)
   // One write at a time, so a second tap on a slow connection cannot send the same change twice.
   const [busy, setBusy] = useState(false)
 
-  const load = useCallback(() => {
-    void api<SubjectSetting[]>('/api/subjects')
-      .then((r) => r.ok && setSubjects(r.body))
-      .catch(onOffline)
-  }, [onOffline])
-  useEffect(load, [load])
+  const load = useCallback(
+    () =>
+      api<SubjectSetting[]>('/api/subjects')
+        .then((r) => {
+          if (r.ok) setSubjects(r.body)
+        })
+        .catch(onOffline),
+    [onOffline],
+  )
+  useEffect(() => {
+    void load()
+  }, [load])
 
   // Every answer carries the subject or list the server now holds. A refusal means this list is out
   // of date (another tab changed it), so it is read again rather than kept.
@@ -63,7 +71,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
         return false
       }
       if (r.ok) apply(r.body)
-      else load()
+      else await load()
       onChanged()
       return r.ok
     } finally {
@@ -75,7 +83,9 @@ export function Subjects({ onChanged, onOffline }: Props) {
   if (subjects === null) return null
 
   const parents = subjects.filter((s) => s.parent_id === null)
-  const parentId = parent === 'none' ? null : Number(parent)
+  const editing = subjects.find((s) => s.subject_id === editingId) ?? null
+  // A selected parent that was deleted meanwhile falls back to top level.
+  const parentId = parents.some((p) => String(p.subject_id) === parent) ? Number(parent) : null
   const addNote = duplicateNote(subjects, name, parentId, null)
   const editNote = editing && duplicateNote(subjects, newName, editing.parent_id, editing.subject_id)
   // Why the edit sheet cannot delete this subject, or null when it can.
@@ -119,7 +129,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
           )}
           onClick={() => {
             setNewName(s.name)
-            setEditing(s)
+            setEditingId(s.subject_id)
           }}
         >
           {s.name}
@@ -160,7 +170,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
           </Button>
         </div>
         {addNote && <p className="px-1 text-xs text-destructive">{addNote}</p>}
-        <Select items={parentItems} value={parent} onValueChange={(v) => v && setParent(v)}>
+        <Select items={parentItems} value={parentId === null ? 'none' : parent} onValueChange={(v) => v && setParent(v)}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>
@@ -188,7 +198,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
         スイッチを切った教科はボタンに出なくなります。上の教科を切ると、その下の教科も出なくなります。これまでの記録はそのまま苔に残ります。
       </p>
 
-      <Drawer open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
+      <Drawer open={editing !== null} onOpenChange={(open) => !open && setEditingId(null)}>
         <DrawerContent>
           <DrawerHeader>
             <DrawerTitle>教科を編集</DrawerTitle>
@@ -200,7 +210,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
                 e.preventDefault()
                 const n = newName.trim()
                 if (!editing || !n || editNote) return
-                if (await change(`/api/subjects/${editing.subject_id}`, { name: n }, 'PATCH', replace)) setEditing(null)
+                if (await change(`/api/subjects/${editing.subject_id}`, { name: n }, 'PATCH', replace)) setEditingId(null)
               }}
             >
               <Input value={newName} maxLength={40} aria-invalid={Boolean(editNote)} onChange={(e) => setNewName(e.target.value)} />
@@ -231,7 +241,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
               onClick={async () => {
                 setConfirming(false)
                 if (!editing) return
-                if (await change<SubjectSetting[]>(`/api/subjects/${editing.subject_id}`, {}, 'DELETE', setSubjects)) setEditing(null)
+                if (await change<SubjectSetting[]>(`/api/subjects/${editing.subject_id}`, {}, 'DELETE', setSubjects)) setEditingId(null)
               }}
             >
               消す
