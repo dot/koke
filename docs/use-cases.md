@@ -69,7 +69,7 @@ Subjects can be grouped one level deep: a subject may sit under a parent subject
 
 ### A1. Invite a learner
 
-The admin creates an account for a learner and hands them a single-use invitation link directly. Opening it on the iPhone and adding koke to the home screen signs that phone in (ADR 2). When the learner replaces or loses the phone, the admin issues a new invitation for the same account and the records carry on.
+The admin creates an account for a learner and hands them a single-use invitation link directly. When creating the account, the admin may give a starting list of subjects; otherwise the list starts empty. Either way it is the learner's own list from then on (L9). Opening it on the iPhone and adding koke to the home screen signs that phone in (ADR 2). When the learner replaces or loses the phone, the admin issues a new invitation for the same account and the records carry on.
 
 ### A2. Read the records
 

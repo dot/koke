@@ -160,6 +160,14 @@ The switch batch has three statements. The second and third are `INSERT … SELE
 | `PATCH /api/subjects/:id` | `{ "name"?, "hidden"? }` |
 | `PUT /api/subjects/order` | `{ "subject_ids": [3, 1, 2] }` (must list every subject of the learner; children are shown in this order under their parent) |
 
+A subject in a response is `{ "subject_id": 3, "parent_id": null, "name": "math", "hidden": false }`. `POST` and `PATCH` return the subject; `GET` and `PUT` return the whole list.
+
+- `name` is trimmed and must be 1 to 40 characters; otherwise `400`.
+- `parent_id` must be one of the learner's top-level subjects. Another learner's subject or an unknown id is `404`; a child is `400`, since subjects nest one level.
+- `PATCH` with neither field, or a `hidden` that is not a boolean, is `400`. Another learner's subject is `404`.
+- `PUT /api/subjects/order` is `400` unless the list names each of the learner's subjects exactly once.
+- A subject is never deleted and never moves to another parent.
+
 ### Push (L1, L6)
 
 `POST /api/push-subscriptions` with the `PushSubscription` JSON. Stored with the `user_id` and the `device_id` of the phone that sent it. Revoking a device deletes its subscriptions (#13), so a lost phone stops receiving pushes. Subscriptions that the push service answers with `404` or `410` are deleted.

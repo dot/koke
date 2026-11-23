@@ -16,6 +16,7 @@ Shown when no session is running.
 
 - One large "始める" (start) button. It starts an uncategorized session.
 - Below it, "教科を決めて始める" (start with a subject) and the subject buttons: one row per parent subject, with the parent first and its visible children after it, so any subject is one tap. The row holding the subject used last comes first. Hidden subjects are left out; hiding a parent hides its row.
+- With no subject to show, a short line says "教科は「教科」タブで足せます。" in place of the buttons.
 
 ## 勉強: running (L3, L4)
 
@@ -78,11 +79,12 @@ Tapping the "still studying?" notification opens koke, which reads the current s
 ## 教科: subjects (L9)
 
 - An add form: the name, and "上の教科なし" or "<parent> の下" to place it under a parent. Only top-level subjects can be parents.
-- The list: each parent with its children indented below it. Each row has up and down arrows that move it among its siblings, and a switch that shows or hides it.
+- The list: each parent with its children indented below it. Each row has up and down arrows that move it among its siblings, and a switch that shows or hides it. A hidden subject is struck through; the children of a hidden parent are dimmed.
+- Tapping a name opens "名前を変える" (rename) in a sheet: the name and "保存する".
 - A note under the list: hidden subjects leave the start buttons, hiding a parent hides its children too, and past records stay in the moss.
 
 ## Not in the prototype
 
 - Behaviour when the network is down. #4 decides it, along with the service worker.
-- Renaming a subject or moving it to another parent.
+- Moving a subject to another parent.
 - The invitation pages (A1, ADR 2). #13 builds them.
