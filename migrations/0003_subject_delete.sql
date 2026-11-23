@@ -2,6 +2,23 @@
 -- it and D1 enforces foreign keys, so the row stays as a tombstone with deleted_at set.
 ALTER TABLE subjects ADD COLUMN deleted_at INTEGER;
 
+-- Names are unique among a learner's live siblings. The API compares nameKey() (NFKC, trimmed,
+-- lower case) and stores it here, so two requests racing past that check still cannot both write.
+-- SQLite has no NFKC; existing rows get the closest it offers, which matches for the names in use.
+-- COALESCE because a unique index treats NULL parents as distinct.
+ALTER TABLE subjects ADD COLUMN name_key TEXT;
+UPDATE subjects SET name_key = lower(trim(name));
+CREATE UNIQUE INDEX subjects_unique_name ON subjects (user_id, COALESCE(parent_id, 0), name_key)
+  WHERE deleted_at IS NULL;
+
+-- A child can only be added under a live parent, even when the parent is deleted meanwhile.
+CREATE TRIGGER subjects_parent_live BEFORE INSERT ON subjects
+WHEN NEW.parent_id IS NOT NULL
+BEGIN
+  SELECT RAISE(ABORT, 'parent is deleted')
+  WHERE (SELECT deleted_at FROM subjects WHERE subject_id = NEW.parent_id) IS NOT NULL;
+END;
+
 -- "Is this subject used?" reads only the revisions that point at it, not everyone's history.
 CREATE INDEX session_revisions_by_subject ON session_revisions (subject_id);
 

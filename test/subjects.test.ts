@@ -181,11 +181,25 @@ describe('duplicate names (L9)', () => {
     const phone = await newPhone()
     await add(phone.cookie, { name: 'Math' })
     const hidden = (await add(phone.cookie, { name: '国語' })).body
-    await patch(phone.cookie, hidden.subject_id, { hidden: true })
+    expect((await patch(phone.cookie, hidden.subject_id, { hidden: true })).body.hidden).toBe(true)
     for (const name of ['math', 'ＭＡＴＨ', ' Math ', '国語']) {
       expect((await add(phone.cookie, { name })).status).toBe(409)
     }
     expect(names(await list(phone.cookie))).toEqual(['Math', '国語'])
+  })
+
+  it('lets only one of two adds of the same name through when they arrive together', async () => {
+    const phone = await newPhone()
+    const results = await Promise.all([add(phone.cookie, { name: 'Math' }), add(phone.cookie, { name: 'ＭＡＴＨ' })])
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409])
+    expect(await list(phone.cookie)).toHaveLength(1)
+  })
+
+  it('compares names only within one learner', async () => {
+    const phone = await newPhone()
+    const other = await newPhone()
+    expect((await add(phone.cookie, { name: '数学' })).status).toBe(200)
+    expect((await add(other.cookie, { name: '数学' })).status).toBe(200)
   })
 
   it('allows the same name under different parents', async () => {
@@ -225,9 +239,18 @@ describe('delete a subject (L9)', () => {
     await add(phone.cookie, { name: '英語' })
     const session = await startWith(phone.cookie, math.subject_id)
     expect((await remove(phone.cookie, math.subject_id)).status).toBe(409)
-    await call(`/api/sessions/${session}/stop`, { cookie: phone.cookie, body: { base_rev: 1 } })
+    const stopped = await send<{ applied: boolean; session: { ended_at: number | null } }>(phone.cookie, `/api/sessions/${session}/stop`, { base_rev: 1 })
+    expect(stopped.body.applied).toBe(true)
+    expect(stopped.body.session.ended_at).not.toBeNull()
     expect((await remove(phone.cookie, math.subject_id)).status).toBe(409)
     expect((await list(phone.cookie)).map((s) => [s.name, s.used])).toEqual([['数学', true], ['英語', false]])
+  })
+
+  it('answers one of two deletes arriving together with 404, not 409', async () => {
+    const phone = await newPhone()
+    const math = (await add(phone.cookie, { name: '数学' })).body
+    const results = await Promise.all([remove(phone.cookie, math.subject_id), remove(phone.cookie, math.subject_id)])
+    expect(results.map((r) => r.status).sort()).toEqual([200, 404])
   })
 
   it('deletes a subject that only a corrected-away or deleted record ever pointed at', async () => {

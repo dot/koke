@@ -11,6 +11,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { addInvitation, addSubjects, addUser, listDevices, revokeDevice, revokeUser } from '../src/admin/sql.ts'
+import { nameKey } from '../src/shared/subject-name.ts'
 import { INVITATION_TTL, SUBJECT_NAME_MAX } from '../src/worker/constants.ts'
 import { randomToken, sha256 } from '../src/worker/crypto.ts'
 
@@ -47,7 +48,8 @@ switch (command) {
     const subjects = flag === -1 ? [] : (rest[flag + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const name = (flag === -1 ? rest.slice(1) : rest.slice(1, flag)).join(' ').trim()
     if (rest[0] !== 'add' || !name || (flag !== -1 && (subjects.length === 0 || rest.length !== flag + 2)) ||
-      subjects.some((s) => [...s].length > SUBJECT_NAME_MAX)) {
+      subjects.some((s) => [...s].length > SUBJECT_NAME_MAX) ||
+      new Set(subjects.map(nameKey)).size !== subjects.length) {
       console.error('usage: user add <display name> [--subjects 国語,数学,英語]')
       process.exit(1)
     }

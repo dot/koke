@@ -27,6 +27,9 @@ function subjectName(value: unknown): string | null {
   return length >= 1 && length <= SUBJECT_NAME_MAX ? name : null
 }
 
+// Two requests can both pass nameTaken(); the unique index on name_key refuses the second write.
+const nameCollision = (e: unknown) => String(e).includes('UNIQUE constraint failed')
+
 // Names are unique among siblings (the same parent, or both top-level); hidden subjects count.
 async function nameTaken(db: D1Database, userId: number, parentId: number | null, name: string, except: number | null) {
   const { results } = await db
@@ -57,15 +60,23 @@ export async function addSubject(db: D1Database, userId: number, body: Record<st
     if (parent.parent_id !== null) return { kind: 'bad_request' }
   }
   if (await nameTaken(db, userId, parentId as number | null, name, null)) return { kind: 'conflict' }
-  const row = await db
-    .prepare(
-      `INSERT INTO subjects (user_id, parent_id, name, position, created_at)
-       SELECT ?1, ?2, ?3, COALESCE(MAX(position), 0) + 1, ?4 FROM subjects WHERE user_id = ?1
-       RETURNING ${COLUMNS}`,
-    )
-    .bind(userId, parentId, name, now)
-    .first<Row>()
-  return { kind: 'ok', body: toRow(row!) }
+  let row: Row | null
+  try {
+    // The parent is checked again in the insert itself, so one deleted meanwhile gets no child.
+    row = await db
+      .prepare(
+        `INSERT INTO subjects (user_id, parent_id, name, name_key, position, created_at)
+         SELECT ?1, ?2, ?3, ?4, COALESCE(MAX(position), 0) + 1, ?5 FROM subjects WHERE user_id = ?1
+         HAVING ?2 IS NULL OR EXISTS (SELECT 1 FROM subjects WHERE subject_id = ?2 AND deleted_at IS NULL)
+         RETURNING ${COLUMNS}`,
+      )
+      .bind(userId, parentId, name, nameKey(name), now)
+      .first<Row>()
+  } catch (e) {
+    if (nameCollision(e)) return { kind: 'conflict' }
+    throw e
+  }
+  return row ? { kind: 'ok', body: toRow(row) } : { kind: 'not_found' }
 }
 
 export async function changeSubject(db: D1Database, userId: number, subjectId: number, body: Record<string, unknown>): Promise<SubjectResult<SubjectRow>> {
@@ -75,8 +86,8 @@ export async function changeSubject(db: D1Database, userId: number, subjectId: n
   if ('name' in body) {
     name = subjectName(body.name)
     if (name === null) return { kind: 'bad_request' }
-    sets.push('name = ?')
-    values.push(name)
+    sets.push('name = ?', 'name_key = ?')
+    values.push(name, nameKey(name))
   }
   if ('hidden' in body) {
     if (typeof body.hidden !== 'boolean') return { kind: 'bad_request' }
@@ -90,10 +101,16 @@ export async function changeSubject(db: D1Database, userId: number, subjectId: n
     .first<{ parent_id: number | null }>()
   if (!current) return { kind: 'not_found' }
   if (name !== null && (await nameTaken(db, userId, current.parent_id, name, subjectId))) return { kind: 'conflict' }
-  const row = await db
-    .prepare(`UPDATE subjects SET ${sets.join(', ')} WHERE subject_id = ? AND user_id = ? AND deleted_at IS NULL RETURNING ${COLUMNS}`)
-    .bind(...values, subjectId, userId)
-    .first<Row>()
+  let row: Row | null
+  try {
+    row = await db
+      .prepare(`UPDATE subjects SET ${sets.join(', ')} WHERE subject_id = ? AND user_id = ? AND deleted_at IS NULL RETURNING ${COLUMNS}`)
+      .bind(...values, subjectId, userId)
+      .first<Row>()
+  } catch (e) {
+    if (nameCollision(e)) return { kind: 'conflict' }
+    throw e
+  }
   return row ? { kind: 'ok', body: toRow(row) } : { kind: 'not_found' }
 }
 
@@ -135,6 +152,11 @@ export async function deleteSubject(db: D1Database, userId: number, subjectId: n
     )
     .bind(now, subjectId, userId)
     .run()
-  if (done.meta.changes !== 1) return { kind: 'conflict' }
-  return { kind: 'ok', body: await listSubjects(db, userId) }
+  if (done.meta.changes === 1) return { kind: 'ok', body: await listSubjects(db, userId) }
+  // Refused by the write: gone if another delete got there first, otherwise used or a parent now.
+  const live = await db
+    .prepare('SELECT 1 FROM subjects WHERE subject_id = ? AND user_id = ? AND deleted_at IS NULL')
+    .bind(subjectId, userId)
+    .first()
+  return { kind: live ? 'conflict' : 'not_found' }
 }

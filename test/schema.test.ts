@@ -117,6 +117,27 @@ describe('subjects', () => {
     ).rejects.toThrow(/cannot be replaced/)
   })
 
+  it('refuses a second live sibling with the same name key, but not once the first is deleted', async () => {
+    const userId = await newUser()
+    const insert = (parentId: number | null) =>
+      db.prepare("INSERT INTO subjects (user_id, parent_id, name, name_key, position, created_at) VALUES (?, ?, 'Math', 'math', 1, 0) RETURNING subject_id")
+        .bind(userId, parentId)
+        .first<{ subject_id: number }>()
+    const first = await insert(null)
+    await expect(insert(null)).rejects.toThrow(/UNIQUE/)
+    // Under a parent the same key is free; at the top level it is free again once the first is deleted.
+    await insert((await subject(userId))!)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(first!.subject_id).run()
+    await insert(null)
+  })
+
+  it('refuses a child under a deleted parent', async () => {
+    const userId = await newUser()
+    const parent = await subject(userId)
+    await db.prepare('UPDATE subjects SET deleted_at = 1 WHERE subject_id = ?').bind(parent).run()
+    await expect(subject(userId, parent)).rejects.toThrow(/parent is deleted/)
+  })
+
   it('keeps nesting one level deep and within one learner', async () => {
     const owner = await newUser()
     const other = await newUser()
