@@ -6,6 +6,7 @@ import { nextQuestion, stopAtAbsence, type AwayQuestion } from './absence.ts'
 import { api, type Session, type State } from './api.ts'
 import { ShowPairingCode } from './screens/Pairing.tsx'
 import { Study } from './screens/Study.tsx'
+import { Subjects } from './screens/Subjects.tsx'
 import { write } from './write.ts'
 
 type Tab = 'study' | 'moss' | 'log' | 'subjects'
@@ -65,19 +66,23 @@ export function Phone({ initial }: { initial: State }) {
     return r.body
   }, [])
 
+  const showOffline = useCallback(() => {
+    setNotice('つながらないので記録できませんでした')
+    setTimeout(() => setNotice(null), 4000)
+  }, [])
+
   const send = useCallback(
     async (path: string, body: Record<string, unknown>): Promise<Write | null> => {
       const r = await write<Write>(path, body)
       if (!r.ok && 'offline' in r) {
-        setNotice('つながらないので記録できませんでした')
-        setTimeout(() => setNotice(null), 4000)
+        showOffline()
         return null
       }
       // Whatever the answer (applied, stale, conflict), show what the server now holds.
       await refresh()
       return r.ok ? r.body : null
     },
-    [refresh],
+    [refresh, showOffline],
   )
 
   // L5: on every return to the foreground, read the state and ask about a long absence.
@@ -148,7 +153,8 @@ export function Phone({ initial }: { initial: State }) {
             <ShowPairingCode open={pairing} onOpenChange={setPairing} />
           </div>
         )}
-        {(tab === 'log' || tab === 'subjects') && (
+        {tab === 'subjects' && <Subjects onChanged={() => void refresh()} onOffline={showOffline} />}
+        {tab === 'log' && (
           <p className="py-16 text-center text-sm text-muted-foreground">ここはまだ準備中です。</p>
         )}
       </main>

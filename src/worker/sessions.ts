@@ -215,8 +215,22 @@ export async function screenState(db: D1Database, userId: number) {
     )
     .bind(userId)
     .first<{ subject_id: number }>()
+  const current = latest && running(latest) ? toSession(latest) : null
+  // `subjects` holds only what can be picked; the running session keeps its label even after its
+  // subject or that subject's parent is hidden.
+  const path =
+    current?.subject_id == null
+      ? null
+      : await db
+          .prepare(
+            `SELECT p.name AS parent, c.name FROM subjects c LEFT JOIN subjects p ON p.subject_id = c.parent_id
+             WHERE c.subject_id = ? AND c.user_id = ?`,
+          )
+          .bind(current.subject_id, userId)
+          .first<{ parent: string | null; name: string }>()
   return {
-    running: latest && running(latest) ? toSession(latest) : null,
+    running: current,
+    running_subject_path: path ? (path.parent === null ? [path.name] : [path.parent, path.name]) : null,
     subjects,
     last_subject_id: last?.subject_id ?? null,
     away_threshold_minutes: AWAY_THRESHOLD_MINUTES,

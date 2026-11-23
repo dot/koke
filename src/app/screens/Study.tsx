@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import type { State } from '../api.ts'
-import { subjectPath } from '../subjects.ts'
 import { SubjectPicker } from './SubjectPicker.tsx'
 
 type Props = {
@@ -68,7 +67,7 @@ export function Study({ state, onStart, onStop, onSwitch, onPickSubject, awayMin
               </button>
             ) : (
               <span className="rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">
-                {subjectPath(subjects, running.subject_id!)}
+                {state.running_subject_path?.join(' › ')}
               </span>
             )}
             <span className="text-6xl font-extralight tabular-nums tracking-tight">
@@ -92,11 +91,13 @@ export function Study({ state, onStart, onStop, onSwitch, onPickSubject, awayMin
           <Button size="lg" className="h-28 rounded-2xl text-2xl" onClick={() => onStart(null)}>
             始める
           </Button>
-          {subjects.length > 0 && (
+          {subjects.length > 0 ? (
             <div className="flex flex-col gap-3">
               <span className="text-sm text-muted-foreground">教科を決めて始める</span>
               <SubjectPicker subjects={subjects} lastSubjectId={last_subject_id} onPick={(id) => onStart(id)} />
             </div>
+          ) : (
+            <p className="text-center text-sm text-muted-foreground">教科は「教科」タブで足せます。</p>
           )}
         </div>
       )}

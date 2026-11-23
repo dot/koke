@@ -8,3 +8,5 @@ export const COOKIE_NAME = '__Host-koke'
 export const COOKIE_MAX_AGE_SECONDS = 400 * 24 * 3600
 // L5. Sent to the PWA in GET /api/state rather than built into it, so #22 can make it per learner.
 export const AWAY_THRESHOLD_MINUTES = 30
+// L9. A bound on what the learner types; any real subject name fits.
+export const SUBJECT_NAME_MAX = 40

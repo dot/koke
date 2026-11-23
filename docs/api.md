@@ -105,11 +105,11 @@ The launch URL `/?handoff=` is served as a static file and never reaches the Wor
 
 ### Screen state
 
-`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null, "away_threshold_minutes": 30 }`
+`GET /api/state` → `{ "read_only": false, "running": <session> | null, "running_subject_path": ["数学", "数I"] | null, "subjects": [...], "last_subject_id": 5 | null, "away_threshold_minutes": 30 }`
 
 Without a valid cookie it is `401`; the PWA then exchanges a `handoff` code if it has one, and otherwise asks for a new invitation (home-screen app) or shows PC pairing (browser tab).
 
-The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out. `last_subject_id` is looked up among the learner's last 20 sessions, which keeps the rows read bounded.
+The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out. `running_subject_path` names the running session's subject (with its parent first, for a child) even when it or its parent is hidden, so the running screen keeps its label; it is null for an uncategorized session. `last_subject_id` is looked up among the learner's last 20 sessions, which keeps the rows read bounded.
 
 `away_threshold_minutes` is how long koke must have been away before the PWA asks "were you still studying?" (L5). It is 30, a constant on the server; the PWA has none of its own, so a per-learner setting (#22) changes only the server. Each `away_at` is judged once, on the return that follows it.
 
@@ -159,6 +159,14 @@ The switch batch has three statements. The second and third are `INSERT … SELE
 | `POST /api/subjects` | `{ "name": "math", "parent_id"?: 3 }` → appended at the end |
 | `PATCH /api/subjects/:id` | `{ "name"?, "hidden"? }` |
 | `PUT /api/subjects/order` | `{ "subject_ids": [3, 1, 2] }` (must list every subject of the learner; children are shown in this order under their parent) |
+
+A subject in a response is `{ "subject_id": 3, "parent_id": null, "name": "math", "hidden": false }`. `POST` and `PATCH` return the subject; `GET` and `PUT` return the whole list.
+
+- `name` is trimmed and must be 1 to 40 characters; otherwise `400`.
+- `parent_id` must be one of the learner's top-level subjects. Another learner's subject or an unknown id is `404`; a child is `400`, since subjects nest one level.
+- `PATCH` with neither field, or a `hidden` that is not a boolean, is `400`. Another learner's subject is `404`.
+- `PUT /api/subjects/order` is `400` unless the list names each of the learner's subjects exactly once.
+- A subject is never deleted and never moves to another parent.
 
 ### Push (L1, L6)
 
