@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, CalendarDays, ListOrdered, Sprout } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { nextQuestion, type AwayQuestion } from './absence.ts'
+import { nextQuestion, stopAtAbsence, type AwayQuestion } from './absence.ts'
 import { api, type Session, type State } from './api.ts'
 import { ShowPairingCode } from './screens/Pairing.tsx'
 import { Study } from './screens/Study.tsx'
@@ -103,16 +103,8 @@ export function Phone({ initial }: { initial: State }) {
     setQuestion((open) => nextQuestion(open, r, handled, Date.now(), threshold))
   }, [refresh])
 
-  // "Not studying": the session ends at the moment koke went away. A stale stop (a late beacon,
-  // another tab) must not drop the answer, so it is sent once more on the head that came back.
-  const endAtAbsence = async (q: AwayQuestion) => {
-    let s = state.running
-    for (let attempt = 0; attempt < 2 && s?.session_id === q.sessionId && s.ended_at === null; attempt++) {
-      const r = await send(`/api/sessions/${q.sessionId}/stop`, { base_rev: s.rev, ended_at: q.awayAt })
-      if (!r || r.applied) return
-      s = r.session
-    }
-  }
+  const endAtAbsence = (q: AwayQuestion) =>
+    stopAtAbsence(q, state.running, (baseRev) => send(`/api/sessions/${q.sessionId}/stop`, { base_rev: baseRev, ended_at: q.awayAt }))
 
   useEffect(() => {
     void onReturn()

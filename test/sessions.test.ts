@@ -193,19 +193,39 @@ describe('switch (L3)', () => {
     expect(old[1].ended_at).toBe(body.session.started_at)
   })
 
-  it('starts nothing when a stop with the same base_rev got there first', async () => {
+  it('lets exactly one of a stop and a switch with the same base_rev take effect', async () => {
     const phone = await newPhone()
     const math = await addSubject(phone.userId, 'math')
     const english = await addSubject(phone.userId, 'english')
     const { session } = (await start(phone.cookie, { subject_id: math })).body
-    await Promise.all([
+    const [stopped, switched] = await Promise.all([
       post(phone.cookie, `/api/sessions/${session.session_id}/stop`, { base_rev: 1 }),
       post(phone.cookie, `/api/sessions/${session.session_id}/switch`, { base_rev: 1, subject_id: english }),
     ])
+    expect([stopped.body.applied, switched.body.applied].filter(Boolean)).toHaveLength(1)
     const { n } = (await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?').bind(phone.userId).first<{ n: number }>())!
     const state = (await (await call('/api/state', { cookie: phone.cookie })).json()) as { running: Session | null }
-    // Either the stop won (one session, nothing running) or the switch won (two sessions, one running).
-    expect(n === 1 ? state.running : state.running?.subject_id).toBe(n === 1 ? null : english)
+    const old = (await revisions(session.session_id)) as { rev: number; ended_at: number | null }[]
+    expect(old).toHaveLength(2)
+    if (stopped.body.applied) {
+      expect(n).toBe(1)
+      expect(state.running).toBeNull()
+    } else {
+      expect(n).toBe(2)
+      expect(state.running).toMatchObject({ subject_id: english, started_at: old[1].ended_at })
+    }
+  })
+
+  it("answers 404 for another learner's subject and leaves the session running", async () => {
+    const phone = await newPhone()
+    const other = await newPhone()
+    const theirs = await addSubject(other.userId, 'theirs')
+    const { session } = (await start(phone.cookie)).body
+    const res = await post(phone.cookie, `/api/sessions/${session.session_id}/switch`, { base_rev: 1, subject_id: theirs })
+    expect(res.status).toBe(404)
+    expect(await revisions(session.session_id)).toHaveLength(1)
+    const state = (await (await call('/api/state', { cookie: phone.cookie })).json()) as { running: Session | null }
+    expect(state.running?.session_id).toBe(session.session_id)
   })
 
   it('answers a stale base_rev with the head before looking at the subject', async () => {

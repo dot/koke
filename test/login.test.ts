@@ -231,24 +231,33 @@ describe('PC pairing (L7)', () => {
     }
   })
 
-  it('pairs even when the same digits were spent earlier at the same moment', async () => {
-    const phone = await newPhone()
+  it('pairs with the phone holding the code now, even when the same digits were spent earlier at the same moment', async () => {
+    const earlier = await newPhone()
+    const holder = await newPhone()
+    const running = ((await (await call('/api/sessions', { cookie: holder.cookie, body: {} })).json()) as { session: { session_id: number } }).session
     const code = '424242'
     const at = Date.now()
     const hash = await sha256(code)
-    // An earlier holder of these digits, spent at `at`, and the code in force now.
+    // Another learner's phone held these digits before, spent at `at`; the holder's code is in force now.
     await env.DB.batch([
       env.DB.prepare(
         'INSERT INTO pairing_codes (code_hash, device_id, created_at, expires_at, spent_at) VALUES (?, ?, ?, ?, ?)',
-      ).bind(hash, phone.deviceId, at - 600_000, at - 300_000, at),
+      ).bind(hash, earlier.deviceId, at - 600_000, at - 300_000, at),
       env.DB.prepare('INSERT INTO pairing_codes (code_hash, device_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(
         hash,
-        phone.deviceId,
+        holder.deviceId,
         at,
         at + 300_000,
       ),
     ])
-    expect(typeof (await pairWithCode(env.DB, code, at))).toBe('string')
+    const token = await pairWithCode(env.DB, code, at)
+    expect(typeof token).toBe('string')
+    const state = (await (await call('/api/state', { cookie: `__Host-koke=${token}` })).json()) as {
+      read_only: boolean
+      running: { session_id: number } | null
+    }
+    expect(state.read_only).toBe(true)
+    expect(state.running?.session_id).toBe(running.session_id)
   })
 
   it('never has two codes in force with the same digits', async () => {
@@ -317,6 +326,12 @@ describe('revocation (A1)', () => {
     const pc = await newPc(phone.cookie)
     const code = await pairingCode(phone.cookie)
     const leaked = await newInvitation(phone.userId)
+    // A running session with a second revision, which must survive the revocation untouched.
+    const started = ((await (await call('/api/sessions', { cookie: phone.cookie, body: {} })).json()) as { session: { session_id: number } }).session
+    await call(`/api/sessions/${started.session_id}/away`, { cookie: phone.cookie, body: { base_rev: 1, away_at: Date.now() } })
+    // Another learner, signed in and holding an unused invitation, must not be touched.
+    const bystander = await newPhone()
+    const theirs = await newInvitation(bystander.userId)
     await revoke.user(phone.userId)
 
     expect((await call('/api/state', { cookie: phone.cookie })).status).toBe(401)
@@ -325,6 +340,10 @@ describe('revocation (A1)', () => {
     expect((await call('/api/handoff', { body: { code: leaked } })).status).toBe(404)
 
     const again = await newPhone(phone.userId)
-    expect((await call('/api/state', { cookie: again.cookie })).status).toBe(200)
+    const state = (await (await call('/api/state', { cookie: again.cookie })).json()) as { running: { session_id: number; rev: number } | null }
+    expect(state.running).toMatchObject({ session_id: started.session_id, rev: 2 })
+
+    expect((await call('/api/state', { cookie: bystander.cookie })).status).toBe(200)
+    expect((await call('/api/handoff', { body: { code: theirs } })).status).toBe(200)
   })
 })

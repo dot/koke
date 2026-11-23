@@ -31,7 +31,7 @@ Shown while a session is running.
 
 ## Absence question (L5)
 
-An alert dialog over the running screen, shown when koke comes back after being away longer than the fixed threshold.
+An alert dialog over the running screen, shown when koke comes back after being away for at least the fixed threshold.
 
 - Title "N 分離れていました", text "その間も勉強していましたか？".
 - "していた" (yes) keeps the session running. On the iPhone the two buttons are the only way to close the dialog (an alert dialog does not close on a tap outside it); closing it any other way, such as Escape on a keyboard, counts as yes.
