@@ -90,6 +90,20 @@ describe('rename and hide a subject (L9)', () => {
     expect(names(shown.subjects)).toEqual(['数学', '数I', '英語'])
   })
 
+  it('keeps the label of the running session after its subject or its parent is hidden', async () => {
+    const phone = await newPhone()
+    const math = (await add(phone.cookie, { name: '数学' })).body
+    const one = (await add(phone.cookie, { name: '数I', parent_id: math.subject_id })).body
+    await call('/api/sessions', { cookie: phone.cookie, body: { subject_id: one.subject_id } })
+    const label = async () =>
+      ((await (await call('/api/state', { cookie: phone.cookie })).json()) as { running_subject_path: string[] | null }).running_subject_path
+    expect(await label()).toEqual(['数学', '数I'])
+    await patch(phone.cookie, math.subject_id, { hidden: true })
+    expect(await label()).toEqual(['数学', '数I'])
+    await patch(phone.cookie, one.subject_id, { hidden: true })
+    expect(await label()).toEqual(['数学', '数I'])
+  })
+
   it('refuses a change with nothing to change or a bad value', async () => {
     const phone = await newPhone()
     const math = (await add(phone.cookie, { name: '数学' })).body

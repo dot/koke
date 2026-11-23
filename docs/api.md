@@ -105,11 +105,11 @@ The launch URL `/?handoff=` is served as a static file and never reaches the Wor
 
 ### Screen state
 
-`GET /api/state` → `{ "read_only": false, "running": <session> | null, "subjects": [...], "last_subject_id": 5 | null, "away_threshold_minutes": 30 }`
+`GET /api/state` → `{ "read_only": false, "running": <session> | null, "running_subject_path": ["数学", "数I"] | null, "subjects": [...], "last_subject_id": 5 | null, "away_threshold_minutes": 30 }`
 
 Without a valid cookie it is `401`; the PWA then exchanges a `handoff` code if it has one, and otherwise asks for a new invitation (home-screen app) or shows PC pairing (browser tab).
 
-The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out. `last_subject_id` is looked up among the learner's last 20 sessions, which keeps the rows read bounded.
+The PWA calls this on open to pick its screen (#4). `read_only` is true for a `pc` device, which shows only the moss (L7); the cookie is `HttpOnly`, so the page cannot tell by itself. `subjects` are the visible ones in the learner's order, each with its `parent_id`, plus `last_subject_id` so the PWA can put that group first. A child of a hidden parent is left out. `running_subject_path` names the running session's subject (with its parent first, for a child) even when it or its parent is hidden, so the running screen keeps its label; it is null for an uncategorized session. `last_subject_id` is looked up among the learner's last 20 sessions, which keeps the rows read bounded.
 
 `away_threshold_minutes` is how long koke must have been away before the PWA asks "were you still studying?" (L5). It is 30, a constant on the server; the PWA has none of its own, so a per-learner setting (#22) changes only the server. Each `away_at` is judged once, on the return that follows it.
 

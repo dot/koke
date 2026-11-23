@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import type { State } from '../api.ts'
-import { subjectPath } from '../subjects.ts'
 import { SubjectPicker } from './SubjectPicker.tsx'
 
 type Props = {
@@ -68,7 +67,7 @@ export function Study({ state, onStart, onStop, onSwitch, onPickSubject, awayMin
               </button>
             ) : (
               <span className="rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">
-                {subjectPath(subjects, running.subject_id!)}
+                {state.running_subject_path?.join(' › ')}
               </span>
             )}
             <span className="text-6xl font-extralight tabular-nums tracking-tight">

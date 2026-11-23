@@ -30,6 +30,8 @@ export type SubjectSetting = Subject & { hidden: boolean }
 export type State = {
   read_only: boolean
   running: Session | null
+  // [parent, child] or [subject]; kept even when the subject is hidden.
+  running_subject_path: string[] | null
   subjects: Subject[]
   last_subject_id: number | null
   away_threshold_minutes: number

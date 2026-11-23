@@ -14,11 +14,3 @@ export function subjectRows(subjects: Subject[], lastSubjectId: number | null): 
   if (last > 0) rows.unshift(...rows.splice(last, 1))
   return rows
 }
-
-// "数学 › 数I" for a child, the name alone for a parent.
-export function subjectPath(subjects: Subject[], subjectId: number): string {
-  const s = subjects.find((x) => x.subject_id === subjectId)
-  if (!s) return ''
-  const parent = s.parent_id === null ? undefined : subjects.find((x) => x.subject_id === s.parent_id)
-  return parent ? `${parent.name} › ${s.name}` : s.name
-}
