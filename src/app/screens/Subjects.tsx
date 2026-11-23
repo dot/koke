@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -22,23 +22,34 @@ export function Subjects({ onChanged, onOffline }: Props) {
   const [parent, setParent] = useState('none')
   const [renaming, setRenaming] = useState<SubjectSetting | null>(null)
   const [newName, setNewName] = useState('')
+  // One write at a time: a second tap on a slow connection would add the same subject twice, and
+  // subjects cannot be deleted.
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     void api<SubjectSetting[]>('/api/subjects')
       .then((r) => r.ok && setSubjects(r.body))
       .catch(onOffline)
   }, [onOffline])
+  useEffect(load, [load])
 
-  // Every answer carries the subject or list the server now holds; a refusal leaves the screen as it was.
+  // Every answer carries the subject or list the server now holds. A refusal means this list is out
+  // of date (another tab changed it), so it is read again rather than kept.
   async function change<T>(path: string, body: Record<string, unknown>, method: string, apply: (body: T) => void) {
-    const r = await write<T>(path, body, method)
-    if (!r.ok) {
-      if ('offline' in r) onOffline()
-      return false
+    setBusy(true)
+    try {
+      const r = await write<T>(path, body, method)
+      if (!r.ok && 'offline' in r) {
+        onOffline()
+        return false
+      }
+      if (r.ok) apply(r.body)
+      else load()
+      onChanged()
+      return r.ok
+    } finally {
+      setBusy(false)
     }
-    apply(r.body)
-    onChanged()
-    return true
   }
   const replace = (s: SubjectSetting) => setSubjects((ss) => ss && ss.map((x) => (x.subject_id === s.subject_id ? s : x)))
 
@@ -82,15 +93,16 @@ export function Subjects({ onChanged, onOffline }: Props) {
         >
           {s.name}
         </button>
-        <Button variant="ghost" size="icon-sm" aria-label="上へ" disabled={i === 0} onClick={() => move(s, -1)}>
+        <Button variant="ghost" size="icon-sm" aria-label="上へ" disabled={busy || i === 0} onClick={() => move(s, -1)}>
           <ArrowUp />
         </Button>
-        <Button variant="ghost" size="icon-sm" aria-label="下へ" disabled={i === sib.length - 1} onClick={() => move(s, 1)}>
+        <Button variant="ghost" size="icon-sm" aria-label="下へ" disabled={busy || i === sib.length - 1} onClick={() => move(s, 1)}>
           <ArrowDown />
         </Button>
         <Switch
           aria-label="表示する"
           checked={!s.hidden}
+          disabled={busy}
           onCheckedChange={(on) => void change(`/api/subjects/${s.subject_id}`, { hidden: !on }, 'PATCH', replace)}
         />
       </div>
@@ -111,7 +123,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
       >
         <div className="flex gap-2">
           <Input placeholder="新しい教科" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
-          <Button type="submit" disabled={!name.trim()}>
+          <Button type="submit" disabled={busy || !name.trim()}>
             足す
           </Button>
         </div>
@@ -158,7 +170,7 @@ export function Subjects({ onChanged, onOffline }: Props) {
             }}
           >
             <Input value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} />
-            <Button type="submit" size="lg" disabled={!newName.trim() || newName.trim() === renaming?.name}>
+            <Button type="submit" size="lg" disabled={busy || !newName.trim() || newName.trim() === renaming?.name}>
               保存する
             </Button>
           </form>
