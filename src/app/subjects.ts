@@ -1,4 +1,5 @@
-import type { Subject } from './api.ts'
+// Only the fields used here, so tests can import this without the browser-only api.ts.
+type Subject = { subject_id: number; parent_id: number | null; name: string }
 
 export type Row = { parent: Subject; children: Subject[] }
 
