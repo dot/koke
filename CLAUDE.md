@@ -13,3 +13,13 @@
 3. Re-read the issue being worked on and confirm the change stays inside its Scope / Behaviour / Done-when. If the work reveals the issue is wrong or incomplete, update the issue (or file a new one) before continuing; do not quietly widen it.
 4. If the use case document itself turns out to be wrong, propose the edit to `docs/use-cases.md` and get it agreed before building against the new reading.
 5. In the PR or commit message, state which use case and issue the change serves.
+
+## Cloudflare tooling
+
+Keep using Wrangler for this repo (`npm run dev` / `deploy`, `wrangler d1 ...`) even though the `cf` CLI is the preferred tool elsewhere. `cf` cannot replace it here yet:
+
+- `@cloudflare/vite-plugin` and `@cloudflare/vitest-plugin` read `wrangler.jsonc`.
+- `cf --local` keeps its own state outside `.wrangler/`, so it does not see the local D1 that `npm run dev` uses.
+- The installed `cf` has no `cf migrate` yet. Running `cf dev`, `cf build` or `cf deploy` without migrating can generate a fresh config that ignores `wrangler.jsonc`.
+
+Once `cf migrate` ships (expected with `cf` 1.0), open an issue to move the project to `cloudflare.config.ts`, covering the Vite and Vitest plugins, `scripts/admin.ts` and the docs that cite `wrangler` commands.
